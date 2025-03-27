@@ -1,5 +1,5 @@
 const httpStatus = require('http-status');
-const { User } = require('../models');
+const prisma = require('../models');
 const ApiError = require('../utils/ApiError');
 
 /**
@@ -8,24 +8,56 @@ const ApiError = require('../utils/ApiError');
  * @returns {Promise<User>}
  */
 const createUser = async (userBody) => {
-  if (await User.isEmailTaken(userBody.email)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
+  const existingUser = await prisma.user.findUnique({
+    where: { email: userBody.email }
+  });
+  
+  if (existingUser) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Email já está em uso');
   }
-  return User.create(userBody);
+  
+  return prisma.user.create({
+    data: userBody
+  });
 };
 
 /**
  * Query for users
- * @param {Object} filter - Mongo filter
- * @param {Object} options - Query options
- * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
- * @param {number} [options.page] - Current page (default = 1)
+ * @param {Object} filter - Filtro para consulta
+ * @param {Object} options - Opções de consulta
+ * @param {string} [options.sortBy] - Classificação (ex: "field1:desc,field2:asc")
+ * @param {number} [options.limit] - Máximo de resultados por página
+ * @param {number} [options.page] - Página atual
  * @returns {Promise<QueryResult>}
  */
 const queryUsers = async (filter, options) => {
-  const users = await User.paginate(filter, options);
-  return users;
+  const page = options.page ?? 1;
+  const limit = options.limit ?? 10;
+  const skip = (page - 1) * limit;
+
+  let orderBy = {};
+  if (options.sortBy) {
+    const parts = options.sortBy.split(':');
+    orderBy[parts[0]] = parts[1] === 'desc' ? 'desc' : 'asc';
+  }
+
+  const [items, totalItems] = await Promise.all([
+    prisma.user.findMany({
+      where: filter,
+      skip,
+      take: limit,
+      orderBy
+    }),
+    prisma.user.count({ where: filter })
+  ]);
+
+  return {
+    results: items,
+    page,
+    limit,
+    totalPages: Math.ceil(totalItems / limit),
+    totalResults: totalItems
+  };
 };
 
 /**
@@ -34,7 +66,9 @@ const queryUsers = async (filter, options) => {
  * @returns {Promise<User>}
  */
 const getUserById = async (id) => {
-  return User.findById(id);
+  return prisma.user.findUnique({
+    where: { id }
+  });
 };
 
 /**
@@ -43,7 +77,9 @@ const getUserById = async (id) => {
  * @returns {Promise<User>}
  */
 const getUserByEmail = async (email) => {
-  return User.findOne({ email });
+  return prisma.user.findUnique({
+    where: { email }
+  });
 };
 
 /**
@@ -55,10 +91,10 @@ const getUserByEmail = async (email) => {
 const updateUserById = async (userId, updateBody) => {
   const user = await getUserById(userId);
   if (!user) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+    throw new ApiError(httpStatus.NOT_FOUND, 'Usuário não encontrado');
   }
-  if (updateBody.email && (await User.isEmailTaken(updateBody.email, userId))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
+  if (updateBody.email && (await getUserByEmail(updateBody.email)).id !== userId) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Email já está em uso');
   }
   Object.assign(user, updateBody);
   await user.save();
@@ -73,7 +109,7 @@ const updateUserById = async (userId, updateBody) => {
 const deleteUserById = async (userId) => {
   const user = await getUserById(userId);
   if (!user) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+    throw new ApiError(httpStatus.NOT_FOUND, 'Usuário não encontrado');
   }
   await user.remove();
   return user;

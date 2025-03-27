@@ -1,3 +1,6 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,55 +11,51 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(uuid())
-  name          String
-  email         String    @unique
-  password      String
-  role          String    @default("user")
-  isEmailVerified Boolean @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  tokens        Token[]
-  pixelConfigs  PixelConfig[]
-  events        Event[]
+  id              String    @id @default(uuid())
+  name            String?
+  email           String    @unique
+  password        String
+  role            String    @default("user")
+  isEmailVerified Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  tokens          Token[]
 }
 
 model Token {
-  id        String   @id @default(uuid())
-  token     String   @unique
-  type      String
-  expires   DateTime
-  blacklisted Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-}
-
-model PixelConfig {
-  id              String   @id @default(uuid())
-  pixelId         String
-  accessToken     String
-  testCode        String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  userId          String
-  user            User     @relation(fields: [userId], references: [id])
-  events          Event[]
+  id          String    @id @default(uuid())
+  token       String    @unique
+  type        String
+  expires     DateTime
+  blacklisted Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
 }
 
 model Event {
-  id              String   @id @default(uuid())
-  eventName       String
-  eventTime       DateTime
-  userData        Json?
-  customData      Json?
-  ipAddress       String?
-  userAgent       String?
-  pixelConfigId   String
-  pixelConfig     PixelConfig @relation(fields: [pixelConfigId], references: [id])
-  userId          String
-  user            User     @relation(fields: [userId], references: [id])
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id           String   @id @default(uuid())
+  pixelId      String
+  eventName    String
+  eventTime    Int
+  userData     Json?
+  customData   Json?
+  status       String   @default("pending")
+  responseData Json?
+  errorMessage String?
+  fbEventId    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model PixelConfig {
+  id          String   @id @default(uuid())
+  domain      String?  @unique
+  pixelId     String   @unique
+  accessToken String
+  testCode    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 } 

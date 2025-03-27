@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const maxmind = require('maxmind');
+const { Reader } = require('@maxmind/geoip2-node');
 const logger = require('../config/logger');
 const config = require('../config/config');
 
@@ -21,7 +21,7 @@ const initialize = async () => {
     }
     
     // Inicializar o leitor GeoIP
-    geoIpReader = await maxmind.open(dbPath);
+    geoIpReader = await Reader.open(dbPath);
     logger.info('Base de dados GeoIP inicializada com sucesso');
     return true;
   } catch (error) {
@@ -35,7 +35,7 @@ const initialize = async () => {
  * @param {string} ip - Endereço IP
  * @returns {Object|null} Dados de localização ou null se não encontrado
  */
-const lookupIp = (ip) => {
+const lookupIp = async (ip) => {
   try {
     // Verificar se o leitor foi inicializado
     if (!geoIpReader) {
@@ -49,50 +49,51 @@ const lookupIp = (ip) => {
       return null;
     }
 
-    // Consultar IP
-    const geoData = geoIpReader.get(ip);
-    if (!geoData) {
-      logger.debug(`Não foram encontradas informações para o IP: ${ip}`);
+    // Buscar informações do IP
+    const result = await geoIpReader.city(ip);
+    
+    if (!result) {
+      logger.debug(`Nenhuma informação encontrada para o IP: ${ip}`);
       return null;
     }
 
-    // Processar e retornar dados
     return {
-      ip,
-      country: geoData.country?.iso_code,
-      countryName: geoData.country?.names?.pt || geoData.country?.names?.en,
-      region: geoData.subdivisions?.[0]?.iso_code,
-      regionName: geoData.subdivisions?.[0]?.names?.pt || geoData.subdivisions?.[0]?.names?.en,
-      city: geoData.city?.names?.pt || geoData.city?.names?.en,
-      postalCode: geoData.postal?.code,
-      latitude: geoData.location?.latitude,
-      longitude: geoData.location?.longitude,
-      timezone: geoData.location?.time_zone,
+      country: result.country?.names?.pt || result.country?.names?.en || 'Desconhecido',
+      city: result.city?.names?.pt || result.city?.names?.en || 'Desconhecido',
+      state: result.subdivisions?.[0]?.names?.pt || result.subdivisions?.[0]?.names?.en || 'Desconhecido',
+      latitude: result.location?.latitude || null,
+      longitude: result.location?.longitude || null,
+      timezone: result.location?.timeZone || null,
+      continent: result.continent?.names?.pt || result.continent?.names?.en || 'Desconhecido',
+      postalCode: result.postal?.code || null,
+      accuracy: result.location?.accuracyRadius || null,
     };
   } catch (error) {
-    logger.error(`Erro ao consultar IP ${ip}: ${error.message}`);
+    logger.error(`Erro ao buscar informações do IP ${ip}: ${error.message}`);
     return null;
   }
 };
 
 /**
- * Extrair o endereço IP real do cliente a partir dos headers
+ * Extrair o IP do cliente da requisição
  * @param {Object} req - Objeto de requisição Express
- * @returns {string} Endereço IP
+ * @returns {string} IP do cliente
  */
 const extractClientIp = (req) => {
-  // Verificar headers que podem conter o IP real (em ordem de confiabilidade)
-  const ip =
-    req.headers['x-forwarded-for']?.split(',').shift() ||
-    req.headers['cf-connecting-ip'] ||
-    req.headers['x-real-ip'] ||
-    req.connection?.remoteAddress ||
-    req.socket?.remoteAddress ||
-    req.ip ||
-    '';
-
-  // Limpar o IP (remover espaços, IPv6 prefix se presente)
-  return ip.replace(/^.*:/, '').trim();
+  // Tentar obter o IP real do cliente
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (forwardedFor) {
+    // Pegar o primeiro IP da lista (cliente original)
+    return forwardedFor.split(',')[0].trim();
+  }
+  
+  // Tentar obter o IP do socket
+  if (req.socket && req.socket.remoteAddress) {
+    return req.socket.remoteAddress;
+  }
+  
+  // Fallback para IP desconhecido
+  return 'unknown';
 };
 
 module.exports = {

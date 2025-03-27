@@ -17,8 +17,8 @@ const envVarsSchema = Joi.object()
     GEOIP_DB_PATH: Joi.string().description('Caminho para o banco de dados GeoIP'),
     // Configurações Facebook
     FB_API_URL: Joi.string().description('URL da API do Facebook'),
-    FB_PIXEL_ID: Joi.string().description('ID do pixel do Facebook global'),
-    FB_ACCESS_TOKEN: Joi.string().description('Token de acesso do Facebook global'),
+    FB_PIXEL_ID: Joi.string().allow('').description('ID do pixel do Facebook global'),
+    FB_ACCESS_TOKEN: Joi.string().allow('').description('Token de acesso do Facebook global'),
     // Compatibilidade com nomes antigos
     CONVERSIONS_API_PIXEL_ID: Joi.string().allow('').description('ID do pixel (nome antigo)'),
     CONVERSIONS_API_ACCESS_TOKEN: Joi.string().allow('').description('Token de acesso (nome antigo)'),
@@ -33,6 +33,7 @@ const envVarsSchema = Joi.object()
     // Maxmind
     MAXMIND_ACCOUNT_ID: Joi.string().description('ID de conta do MaxMind'),
     MAXMIND_LICENSE_KEY: Joi.string().description('Chave de licença do MaxMind'),
+    FRONTEND_URL: Joi.string().description('URL do frontend da aplicação'),
   })
   .unknown();
 
@@ -56,17 +57,7 @@ module.exports = {
   logger: {
     level: envVars.LOG_LEVEL,
   },
-  email: {
-    smtp: {
-      host: envVars.SMTP_HOST,
-      port: envVars.SMTP_PORT,
-      auth: {
-        user: envVars.SMTP_USERNAME,
-        pass: envVars.SMTP_PASSWORD,
-      },
-    },
-    from: envVars.EMAIL_FROM,
-  },
+  frontendUrl: envVars.FRONTEND_URL,
   facebook: {
     apiUrl: envVars.FB_API_URL || 'https://graph.facebook.com/v18.0',
     pixelId: envVars.FB_PIXEL_ID || envVars.CONVERSIONS_API_PIXEL_ID,

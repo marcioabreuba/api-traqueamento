@@ -7,9 +7,28 @@
       "autorestart": true,
       "watch": false,
       "time": true,
+      "max_memory_restart": "1G",
+      "error_file": "logs/err.log",
+      "out_file": "logs/out.log",
+      "merge_logs": true,
       "env": {
         "NODE_ENV": "production"
-      }
+      },
+      "node_args": "--no-deprecation",
+      "kill_timeout": 3000,
+      "wait_ready": false,
+      "listen_timeout": 10000,
+      "max_restarts": 10,
+      "restart_delay": 4000,
+      "exp_backoff_restart_delay": 100,
+      "force": true,
+      "ignore_watch": ["node_modules", "logs"],
+      "min_uptime": "5s",
+      "exec_mode": "fork",
+      "interpreter": "node",
+      "interpreter_args": "--no-deprecation",
+      "stop_exit_codes": [0],
+      "stop_signal": "SIGTERM"
     }
   ]
 }
