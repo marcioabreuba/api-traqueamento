@@ -48,6 +48,16 @@ if (config.env === 'production') {
   app.use('/v1/auth', authLimiter);
 }
 
+// Rota raiz
+app.get('/', (req, res) => {
+  res.json({
+    status: 'success',
+    message: 'API de Traqueamento está funcionando!',
+    version: '1.0.0',
+    environment: config.env
+  });
+});
+
 // v1 api routes
 app.use('/v1', routes);
 
