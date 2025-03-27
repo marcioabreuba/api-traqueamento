@@ -1,10 +1,11 @@
-const mongoose = require('mongoose');
+const { PrismaClient } = require('@prisma/client');
 const app = require('./app');
 const config = require('./config/config');
 const logger = require('./config/logger');
 const { geoipService } = require('./services');
 
 let server;
+const prisma = new PrismaClient();
 
 // Inicializar a base de dados GeoIP
 geoipService.initialize()
@@ -19,20 +20,39 @@ geoipService.initialize()
     logger.error(`Erro ao inicializar GeoIP: ${error.message}`);
   });
 
-mongoose.connect(config.mongoose.url, config.mongoose.options).then(() => {
-  logger.info('Connected to MongoDB');
-  server = app.listen(config.port, () => {
-    logger.info(`Listening to port ${config.port}`);
-  });
-});
+// Inicializar o servidor
+const startServer = async () => {
+  try {
+    // Testar conexão com o banco de dados
+    await prisma.$connect();
+    logger.info('Conexão com o banco de dados estabelecida com sucesso');
 
-const exitHandler = () => {
-  if (server) {
-    server.close(() => {
-      logger.info('Server closed');
-      process.exit(1);
+    // Iniciar o servidor
+    server = app.listen(config.port, () => {
+      logger.info(`Servidor rodando na porta ${config.port}`);
     });
-  } else {
+  } catch (error) {
+    logger.error('Erro ao iniciar o servidor:', error);
+    process.exit(1);
+  }
+};
+
+// Iniciar o servidor
+startServer();
+
+const exitHandler = async () => {
+  try {
+    await prisma.$disconnect();
+    if (server) {
+      server.close(() => {
+        logger.info('Servidor encerrado');
+        process.exit(1);
+      });
+    } else {
+      process.exit(1);
+    }
+  } catch (error) {
+    logger.error('Erro ao encerrar o servidor:', error);
     process.exit(1);
   }
 };
@@ -46,7 +66,7 @@ process.on('uncaughtException', unexpectedErrorHandler);
 process.on('unhandledRejection', unexpectedErrorHandler);
 
 process.on('SIGTERM', () => {
-  logger.info('SIGTERM received');
+  logger.info('SIGTERM recebido');
   if (server) {
     server.close();
   }
