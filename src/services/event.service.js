@@ -1,8 +1,7 @@
 const httpStatus = require('http-status');
 const ApiError = require('../utils/ApiError');
 const logger = require('../config/logger');
-const { Event } = require('../models');
-const { PixelConfig } = require('../models');
+const prisma = require('../models');
 const facebookService = require('./facebook.service');
 const config = require('../config/config');
 
@@ -12,7 +11,9 @@ const config = require('../config/config');
  * @returns {Promise<Event>}
  */
 const createEvent = async (eventBody) => {
-  const event = await Event.create(eventBody);
+  const event = await prisma.event.create({
+    data: eventBody
+  });
   return event;
 };
 
@@ -22,12 +23,14 @@ const createEvent = async (eventBody) => {
  * @returns {Promise<Event>}
  */
 const getEventById = async (id) => {
-  return Event.findById(id);
+  return prisma.event.findUnique({
+    where: { id }
+  });
 };
 
 /**
  * Consulta eventos
- * @param {Object} filter - Filtro do Mongoose
+ * @param {Object} filter - Filtro para consulta
  * @param {Object} options - Opções de consulta
  * @param {string} [options.sortBy] - Classificação (ex: "field1:desc,field2:asc")
  * @param {number} [options.limit] - Máximo de resultados por página
@@ -35,8 +38,33 @@ const getEventById = async (id) => {
  * @returns {Promise<QueryResult>}
  */
 const queryEvents = async (filter, options) => {
-  const events = await Event.paginate(filter, options);
-  return events;
+  const page = options.page ?? 1;
+  const limit = options.limit ?? 10;
+  const skip = (page - 1) * limit;
+
+  let orderBy = {};
+  if (options.sortBy) {
+    const parts = options.sortBy.split(':');
+    orderBy[parts[0]] = parts[1] === 'desc' ? 'desc' : 'asc';
+  }
+
+  const [items, totalItems] = await Promise.all([
+    prisma.event.findMany({
+      where: filter,
+      skip,
+      take: limit,
+      orderBy
+    }),
+    prisma.event.count({ where: filter })
+  ]);
+
+  return {
+    results: items,
+    page,
+    limit,
+    totalPages: Math.ceil(totalItems / limit),
+    totalResults: totalItems
+  };
 };
 
 /**
@@ -53,9 +81,14 @@ const processEvent = async (eventData, domainOrPixelId) => {
 
   // Verificar se existe uma configuração específica
   try {
-    const pixelConfig = await PixelConfig.findOne({
-      $or: [{ domain: domainOrPixelId }, { pixelId: domainOrPixelId }],
-      isActive: true,
+    const pixelConfig = await prisma.pixelConfig.findFirst({
+      where: {
+        OR: [
+          { domain: domainOrPixelId },
+          { pixelId: domainOrPixelId }
+        ],
+        isActive: true
+      }
     });
 
     if (pixelConfig) {
@@ -112,17 +145,25 @@ const processEvent = async (eventData, domainOrPixelId) => {
     const fbResponse = await facebookService.sendEvent(pixelId, accessToken, fbDataToSend, testCode);
 
     // Atualizar evento com resposta do Facebook
-    savedEvent.status = 'sent';
-    savedEvent.responseData = fbResponse;
-    savedEvent.fbEventId = fbResponse.events_received?.[0]?.id;
-    await savedEvent.save();
+    const updatedEvent = await prisma.event.update({
+      where: { id: savedEvent.id },
+      data: {
+        status: 'sent',
+        responseData: fbResponse,
+        fbEventId: fbResponse.events_received?.[0]?.id
+      }
+    });
 
-    return savedEvent;
+    return updatedEvent;
   } catch (error) {
     // Em caso de falha, atualizar o evento com o erro
-    savedEvent.status = 'failed';
-    savedEvent.errorMessage = error.message || 'Erro desconhecido';
-    await savedEvent.save();
+    const updatedEvent = await prisma.event.update({
+      where: { id: savedEvent.id },
+      data: {
+        status: 'failed',
+        errorMessage: error.message || 'Erro desconhecido'
+      }
+    });
 
     throw error;
   }
