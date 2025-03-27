@@ -8,7 +8,9 @@
     "dev": "nodemon src/index.js",
     "test": "jest",
     "lint": "eslint .",
-    "format": "prettier --write \"**/*.{js,json,md}\""
+    "format": "prettier --write \"**/*.{js,json,md}\"",
+    "security-check": "npm audit",
+    "prepare": "husky install"
   },
   "dependencies": {
     "@prisma/client": "5.7.1",
@@ -16,13 +18,17 @@
     "cors": "2.8.5",
     "express": "4.18.2",
     "express-mongo-sanitize": "2.2.0",
+    "express-rate-limit": "7.1.5",
+    "express-validator": "7.0.1",
     "helmet": "7.1.0",
+    "helmet-csp": "3.4.0",
     "http-status": "1.7.3",
     "joi": "17.11.0",
     "jsonwebtoken": "9.0.2",
     "morgan": "1.10.0",
     "passport": "0.7.0",
     "passport-jwt": "4.0.1",
+    "rate-limiter-flexible": "4.0.1",
     "winston": "3.11.0",
     "xss-clean": "0.1.4"
   },
@@ -32,10 +38,17 @@
     "eslint": "8.56.0",
     "eslint-config-prettier": "9.1.0",
     "eslint-plugin-prettier": "5.1.2",
+    "eslint-plugin-security": "2.1.0",
+    "husky": "8.0.3",
     "jest": "29.7.0",
+    "lint-staged": "15.2.0",
     "nodemon": "3.0.2",
     "pm2": "5.3.0",
     "prettier": "3.1.1",
     "prisma": "5.7.1"
+  },
+  "lint-staged": {
+    "*.js": "eslint --cache --fix",
+    "*.{js,css,md}": "prettier --write"
   }
 }
