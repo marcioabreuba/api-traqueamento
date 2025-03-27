@@ -1,11 +1,14 @@
 {
-  "name": "create-nodejs-express-app",
-  "version": "1.7.0",
-  "description": "Create a Node.js app for building production-ready RESTful APIs using Express, by running one command",
+  "name": "api-traqueamento",
+  "version": "1.0.0",
+  "description": "API de Rastreamento e Conversões do Facebook seguindo padrão profissional",
   "bin": "bin/createNodejsApp.js",
   "main": "src/index.js",
-  "repository": "https://github.com/hagopj13/node-express-boilerplate.git",
-  "author": "Hagop Jamkojian <hagopj13@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marcioabreuba/api-traqueamento.git"
+  },
+  "author": "seu-email@exemplo.com",
   "license": "MIT",
   "engines": {
     "node": ">=12.0.0"
@@ -24,31 +27,29 @@
     "docker:prod": "docker-compose -f docker-compose.yml -f docker-compose.prod.yml up",
     "docker:dev": "docker-compose -f docker-compose.yml -f docker-compose.dev.yml up",
     "docker:test": "docker-compose -f docker-compose.yml -f docker-compose.test.yml up",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "postinstall": "prisma generate",
+    "migrate": "node scripts/migrate.js"
   },
   "keywords": [
     "node",
     "node.js",
-    "boilerplate",
-    "generator",
     "express",
     "rest",
     "api",
-    "mongodb",
-    "mongoose",
-    "es6",
-    "es7",
-    "es8",
-    "es9",
-    "jest",
-    "travis",
-    "docker",
-    "passport",
-    "joi",
-    "eslint",
-    "prettier"
+    "prisma",
+    "postgresql",
+    "facebook",
+    "conversion-api",
+    "tracking",
+    "geoip"
   ],
   "dependencies": {
+    "@prisma/client": "^5.10.0",
+    "axios": "^1.7.4",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
@@ -57,12 +58,14 @@
     "express": "^4.17.1",
     "express-mongo-sanitize": "^2.0.0",
     "express-rate-limit": "^5.0.0",
+    "express-validator": "^7.0.1",
+    "facebook-nodejs-business-sdk": "^18.0.4",
     "helmet": "^4.1.0",
     "http-status": "^1.4.0",
     "joi": "^17.3.0",
     "jsonwebtoken": "^8.5.1",
+    "maxmind": "^4.3.11",
     "moment": "^2.24.0",
-    "mongoose": "^5.7.7",
     "morgan": "^1.9.1",
     "nodemailer": "^6.3.1",
     "passport": "^0.4.0",
@@ -70,6 +73,7 @@
     "pm2": "^5.1.0",
     "swagger-jsdoc": "^6.0.8",
     "swagger-ui-express": "^4.1.6",
+    "uuid": "^9.0.1",
     "validator": "^13.0.0",
     "winston": "^3.2.1",
     "xss-clean": "^0.1.1"
@@ -90,6 +94,7 @@
     "node-mocks-http": "^1.8.0",
     "nodemon": "^2.0.0",
     "prettier": "^2.0.5",
+    "prisma": "^5.10.0",
     "supertest": "^6.0.1"
   }
 }

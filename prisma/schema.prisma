@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  name          String
+  email         String    @unique
+  password      String
+  role          String    @default("user")
+  isEmailVerified Boolean @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  tokens        Token[]
+  pixelConfigs  PixelConfig[]
+  events        Event[]
+}
+
+model Token {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  type      String
+  expires   DateTime
+  blacklisted Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model PixelConfig {
+  id              String   @id @default(uuid())
+  pixelId         String
+  accessToken     String
+  testCode        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  events          Event[]
+}
+
+model Event {
+  id              String   @id @default(uuid())
+  eventName       String
+  eventTime       DateTime
+  userData        Json?
+  customData      Json?
+  ipAddress       String?
+  userAgent       String?
+  pixelConfigId   String
+  pixelConfig     PixelConfig @relation(fields: [pixelConfigId], references: [id])
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+} 
