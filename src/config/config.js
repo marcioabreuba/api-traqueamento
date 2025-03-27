@@ -78,7 +78,7 @@ module.exports = {
     },
   },
   geoip: {
-    dbPath: envVars.GEOIP_DB_PATH || './data/GeoLite2-City.mmdb',
+    dbPath: envVars.GEOIP_DB_PATH || path.resolve(__dirname, '../../data/GeoLite2-City.mmdb'),
   },
   maxmind: {
     accountId: envVars.MAXMIND_ACCOUNT_ID,
