@@ -11,45 +11,39 @@ const logger = require('../config/logger');
 const createEvent = catchAsync(async (req, res) => {
   try {
     logger.info('Iniciando processamento de novo evento');
+    
+    // Extrair IP do cliente
+    const clientIp = req.ip || req.connection.remoteAddress;
+    logger.info(`IP do cliente extraído: ${clientIp}`);
 
-    // Extrair IP do cliente se não fornecido nos dados do usuário
-    if (!req.body.user_data?.ip_address) {
-      const clientIp = req.ip || req.connection.remoteAddress;
-      req.body.user_data = req.body.user_data || {};
-      req.body.user_data.ip_address = clientIp;
-      logger.info(`IP do cliente extraído: ${clientIp}`);
-
-      // Tentar enriquecer com informações de geolocalização
-      try {
-        logger.debug('Iniciando busca de dados GeoIP');
-        const geoData = await geoipService.lookupIp(clientIp);
-        logger.info(`Dados GeoIP obtidos: ${JSON.stringify(geoData)}`);
-        
-        if (geoData) {
-          if (!req.body.user_data.city && geoData.city) {
-            req.body.user_data.city = geoData.city;
-            logger.info(`Cidade enriquecida: ${geoData.city}`);
-          }
-          if (!req.body.user_data.state && geoData.state) {
-            req.body.user_data.state = geoData.state;
-            logger.info(`Estado enriquecido: ${geoData.state}`);
-          }
-          if (!req.body.user_data.country && geoData.country) {
-            req.body.user_data.country = geoData.country;
-            logger.info(`País enriquecido: ${geoData.country}`);
-          }
-          if (geoData.latitude && geoData.longitude) {
-            logger.debug(`Coordenadas obtidas: ${geoData.latitude}, ${geoData.longitude}`);
-          }
-        } else {
-          logger.warn(`Nenhum dado GeoIP encontrado para o IP: ${clientIp}`);
+    // Tentar enriquecer com informações de geolocalização
+    try {
+      logger.debug('Iniciando busca de dados GeoIP');
+      const geoData = await geoipService.lookupIp(clientIp);
+      logger.info(`Dados GeoIP obtidos: ${JSON.stringify(geoData)}`);
+      
+      if (geoData) {
+        if (!req.body.user_data.city && geoData.city) {
+          req.body.user_data.city = geoData.city;
+          logger.info(`Cidade enriquecida: ${geoData.city}`);
         }
-      } catch (error) {
-        logger.error(`Erro ao obter dados de geolocalização: ${error.message}`);
-        logger.error(`Stack trace: ${error.stack}`);
+        if (!req.body.user_data.state && geoData.state) {
+          req.body.user_data.state = geoData.state;
+          logger.info(`Estado enriquecido: ${geoData.state}`);
+        }
+        if (!req.body.user_data.country && geoData.country) {
+          req.body.user_data.country = geoData.country;
+          logger.info(`País enriquecido: ${geoData.country}`);
+        }
+        if (geoData.latitude && geoData.longitude) {
+          logger.debug(`Coordenadas obtidas: ${geoData.latitude}, ${geoData.longitude}`);
+        }
+      } else {
+        logger.warn(`Nenhum dado GeoIP encontrado para o IP: ${clientIp}`);
       }
-    } else {
-      logger.info('Dados de usuário já contêm IP, pulando enriquecimento GeoIP');
+    } catch (error) {
+      logger.error(`Erro ao obter dados de geolocalização: ${error.message}`);
+      logger.error(`Stack trace: ${error.stack}`);
     }
 
     // Extrair user-agent se não fornecido
@@ -71,23 +65,22 @@ const createEvent = catchAsync(async (req, res) => {
       logger.debug(`URL de origem adicionada: ${req.headers.referer}`);
     }
 
-    // Processar e enviar evento
-    const domain = req.params.domain || req.query.domain || req.body.domain;
-    logger.info(`Processando evento para domínio: ${domain}`);
+    // Processar o evento
+    const event = await eventService.createEvent(req.body, clientIp);
     
-    const event = await eventService.processEvent(req.body, domain);
-    logger.info(`Evento processado com sucesso. ID: ${event.id}`);
-    
-    return res.status(httpStatus.CREATED).json({
+    // Enviar resposta de sucesso
+    res.status(httpStatus.CREATED).json({
       success: true,
       data: event
     });
   } catch (error) {
     logger.error('Erro ao processar evento:', error);
-    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      error: error.message || 'Erro interno do servidor'
-    });
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      'Erro ao processar evento',
+      false,
+      error.stack
+    );
   }
 });
 
