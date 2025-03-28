@@ -17,16 +17,14 @@ const createEvent = async (eventData, clientIp) => {
   try {
     // Preparar dados do evento no formato correto do Prisma
     const eventToSave = {
+      pixelId: config.facebook.pixelId,
       eventName: eventData.event_name,
       eventTime: eventData.event_time || Math.floor(Date.now() / 1000),
-      value: eventData.value || 0,
-      currency: eventData.currency || 'BRL',
-      contentName: eventData.content_name,
-      contentType: eventData.content_type,
-      userData: eventData.user_data || {},
+      userData: {
+        ...eventData.user_data,
+        ip: clientIp
+      },
       customData: eventData.custom_data || {},
-      eventSourceUrl: eventData.event_source_url,
-      pixelId: config.facebook.pixelId,
       status: 'pending'
     };
 
@@ -42,14 +40,11 @@ const createEvent = async (eventData, clientIp) => {
       {
         eventName: event.eventName,
         eventTime: event.eventTime,
-        eventSourceUrl: event.eventSourceUrl,
-        userData: {
-          ...event.userData,
-          ip: clientIp
-        },
+        eventSourceUrl: eventData.event_source_url,
+        userData: event.userData,
         customData: event.customData,
-        value: event.value,
-        currency: event.currency
+        value: eventData.value,
+        currency: eventData.currency
       },
       config.facebook.testEventCode
     );
