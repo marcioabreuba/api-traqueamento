@@ -15,17 +15,24 @@ const prisma = new PrismaClient();
  */
 const createEvent = async (eventData, clientIp) => {
   try {
-    // Adicionar pixelId aos dados do evento
-    const eventWithPixel = {
-      ...eventData,
-      pixelId: config.facebook.pixelId, // Adiciona o pixelId do config
-      eventName: eventData.event_name, // Garante que o eventName seja passado corretamente
-      eventTime: eventData.event_time || Math.floor(Date.now() / 1000) // Garante que o eventTime seja passado corretamente
+    // Preparar dados do evento no formato correto do Prisma
+    const eventToSave = {
+      eventName: eventData.event_name,
+      eventTime: eventData.event_time || Math.floor(Date.now() / 1000),
+      value: eventData.value || 0,
+      currency: eventData.currency || 'BRL',
+      contentName: eventData.content_name,
+      contentType: eventData.content_type,
+      userData: eventData.user_data || {},
+      customData: eventData.custom_data || {},
+      eventSourceUrl: eventData.event_source_url,
+      pixelId: config.facebook.pixelId,
+      status: 'pending'
     };
 
     // Criar evento no banco de dados
     const event = await prisma.event.create({
-      data: eventWithPixel
+      data: eventToSave
     });
 
     // Enviar evento para o Facebook
