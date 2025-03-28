@@ -252,32 +252,53 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
       // Verificar resposta
       if (response && response.status) {
         logger.debug(`Status da resposta Facebook: ${response.status}`);
-
+        
+        // Criar um objeto de resposta padronizado
+        let standardResponse = {
+          success: false,
+          status_code: response.status,
+          events_received: 0,
+          messages: []
+        };
+        
+        // Processar os dados da resposta, se disponíveis
         if (response.data) {
           logger.debug('Resposta da API Facebook:', JSON.stringify(response.data, null, 2));
-
+          
+          standardResponse = {
+            ...standardResponse,
+            ...response.data,
+            success: true
+          };
+          
           if (response.data.events_received) {
-            logger.info(
-              `Evento enviado com sucesso para o Facebook (ID: ${formattedEvent.event_id}). Eventos recebidos: ${response.data.events_received}`,
-            );
-            return response.data;
-          }
-          // Mesmo se não houver events_received, considerar sucesso se status 200
-          if (response.status >= 200 && response.status < 300) {
-            logger.info(`Evento enviado para o Facebook (ID: ${formattedEvent.event_id}). Status: ${response.status}`);
-            return response.data;
+            logger.info(`Evento enviado com sucesso para o Facebook (ID: ${formattedEvent.event_id}). Eventos recebidos: ${response.data.events_received}`);
+            standardResponse.events_received = response.data.events_received;
+            standardResponse.messages.push(`${response.data.events_received} eventos recebidos`);
+            return standardResponse;
+          } else {
+            // Mesmo se não houver events_received, considerar sucesso se status 200
+            if (response.status >= 200 && response.status < 300) {
+              logger.info(`Evento enviado para o Facebook (ID: ${formattedEvent.event_id}). Status: ${response.status}`);
+              standardResponse.success = true;
+              standardResponse.messages.push(`Resposta recebida com status ${response.status}`);
+              return standardResponse;
+            }
           }
         }
-
+        
         // Status OK mas sem dados esperados na resposta
         if (response.status >= 200 && response.status < 300) {
           logger.info(`Evento enviado com status ${response.status}, mas formato da resposta inesperado`);
-          return { success: true, status: response.status };
+          standardResponse.success = true;
+          standardResponse.messages.push(`Resposta recebida com status ${response.status}`);
+          return standardResponse;
         }
-
+        
+        standardResponse.messages.push(`Resposta inválida do Facebook: status ${response.status}`);
         throw new Error(`Resposta inválida do Facebook: status ${response.status}`);
       }
-
+      
       throw new Error('Resposta indefinida do Facebook');
     } catch (error) {
       // Adicionar detalhes mais específicos sobre o erro

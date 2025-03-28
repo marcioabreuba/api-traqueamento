@@ -64,18 +64,46 @@ const createEvent = catchAsync(async (req, res) => {
       success: true,
       data: event,
     });
-  } catch (error) {
-    logger.error('Erro ao processar evento:', error);
-    if (error.statusCode) {
-      logger.error(`Status code do erro: ${error.statusCode}`);
+  } catch (originalError) {
+    // Garantir que sempre temos um erro com objeto e mensagem
+    let error = originalError;
+    
+    if (!error) {
+      error = new Error('Erro desconhecido durante processamento do evento');
     }
+    
+    if (typeof error === 'string') {
+      error = new Error(error);
+    }
+    
+    // Garantir que a mensagem de erro sempre existe
+    const errorMessage = error.message || 'Erro desconhecido';
+    logger.error(`Erro ao processar evento: ${errorMessage}`);
+    
+    // Garantir que statusCode sempre é um valor válido
+    let statusCode = httpStatus.INTERNAL_SERVER_ERROR; // 500 como padrão
+    
+    if (error.statusCode) {
+      if (Number.isInteger(error.statusCode) && error.statusCode >= 100 && error.statusCode <= 599) {
+        statusCode = error.statusCode;
+      } else {
+        logger.error(`Status code inválido: ${error.statusCode}, usando 500 como fallback`);
+      }
+    } else {
+      logger.error('Status code não definido, usando 500');
+    }
+    
+    // Sempre definir um statusCode válido no objeto de erro
+    error.statusCode = statusCode;
+    logger.error(`Status code final do erro: ${statusCode}`);
+    
     logger.error(`É instância de ApiError? ${error instanceof ApiError}`);
 
     // Tratamento específico para erros de validação
-    if (error.message && (error.message.includes('validação') || error.message.includes('validation'))) {
+    if (errorMessage && (errorMessage.includes('validação') || errorMessage.includes('validation'))) {
       return res.status(httpStatus.BAD_REQUEST).json({
         success: false,
-        error: error.message,
+        error: errorMessage,
         details: error.details || 'Erro na validação dos dados',
         code: httpStatus.BAD_REQUEST
       });
@@ -83,28 +111,24 @@ const createEvent = catchAsync(async (req, res) => {
 
     // Tratamento de erros ApiError
     if (error instanceof ApiError) {
-      // Garante que o status code será um valor válido
-      const statusCode = error.statusCode && 
-                         Number.isInteger(error.statusCode) && 
-                         error.statusCode >= 100 && 
-                         error.statusCode <= 599 
-                         ? error.statusCode 
-                         : httpStatus.INTERNAL_SERVER_ERROR;
+      logger.error(`Erro detalhado [${statusCode}]: ${errorMessage}`);
       
       return res.status(statusCode).json({
         success: false,
-        error: error.message || 'Erro interno',
+        error: errorMessage,
         details: error.details || 'Erro interno',
         code: statusCode
       });
     }
 
     // Fallback para erros não tratados
-    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+    logger.error(`Erro detalhado [${statusCode}]: ${errorMessage}`);
+    
+    return res.status(statusCode).json({
       success: false,
       error: 'Erro interno do servidor ao processar evento',
-      details: error.message || 'Erro desconhecido',
-      code: httpStatus.INTERNAL_SERVER_ERROR
+      details: errorMessage,
+      code: statusCode
     });
   }
 });
