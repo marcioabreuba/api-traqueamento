@@ -100,7 +100,11 @@ const validateEventData = (eventData) => {
   
   // Validar campos obrigatórios
   const requiredFields = ['event_name'];
-  const missingFields = requiredFields.filter(field => !eventData[field] || eventData[field] === '');
+  const missingFields = requiredFields.filter(field => {
+    const value = eventData[field];
+    // Verificar se o campo está ausente ou vazio
+    return value === undefined || value === null || value === '';
+  });
   
   if (missingFields.length > 0) {
     logger.error(`Campos obrigatórios ausentes: ${missingFields.join(', ')}`);
@@ -371,18 +375,16 @@ const processEvent = async (eventData, domainOrPixelId) => {
         state: eventData.user_data?.state || '',
         country: eventData.user_data?.country || '',
         zipCode: eventData.user_data?.zip_code || '',
-        fbp: eventData.user_data?.fbp || eventData.fbp || '',
+        fbp: (eventData.user_data?.fbp !== null ? eventData.user_data?.fbp : '') || (eventData.fbp !== null ? eventData.fbp : '') || '',
+        sourceUrl: eventData.event_source_url || '',
+        referrer: eventData.referrer || '',
+        domain: domainOrPixelId || '',
+        language: eventData.language || '',
+        appName: eventData.app || '',
       },
       customData: eventData.custom_data || {},
       status: 'pending', // Inicialmente pendente
     };
-
-    // Adicionar campos de rastreamento
-    eventToSave.sourceUrl = eventData.event_source_url || '';
-    eventToSave.referrer = eventData.referrer || '';
-    eventToSave.domain = domainOrPixelId || '';
-    eventToSave.language = eventData.language || '';
-    eventToSave.appName = eventData.app || '';
 
     logger.debug('Evento preparado para salvar:', JSON.stringify(eventToSave, null, 2));
 
@@ -396,11 +398,6 @@ const processEvent = async (eventData, domainOrPixelId) => {
         userData: eventToSave.userData,
         customData: eventToSave.customData,
         status: eventToSave.status,
-        sourceUrl: eventToSave.sourceUrl,
-        referrer: eventToSave.referrer,
-        domain: eventToSave.domain,
-        language: eventToSave.language,
-        appName: eventToSave.appName,
       },
     });
 

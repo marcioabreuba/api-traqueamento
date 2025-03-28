@@ -36,10 +36,12 @@ const eventValidation = {
           'string.base': 'O external_id deve ser uma string',
         }),
         
-        fbp: Joi.string().required().messages({
-          'any.required': 'O fbp é obrigatório',
-          'string.empty': 'O fbp não pode estar vazio',
-          'string.base': 'O fbp deve ser uma string válida'
+        fbp: Joi.alternatives().try(
+          Joi.string().allow(''),
+          Joi.allow(null)
+        ).messages({
+          'alternatives.match': 'O fbp deve ser uma string ou nulo',
+          'string.base': 'O fbp deve ser uma string ou nulo'
         }),
         
         client_user_agent: Joi.string().messages({
@@ -81,10 +83,12 @@ const eventValidation = {
             'string.base': 'O external_id deve ser uma string',
           }),
           
-          fbp: Joi.string().required().messages({
-            'any.required': 'O fbp é obrigatório',
-            'string.empty': 'O fbp não pode estar vazio',
-            'string.base': 'O fbp deve ser uma string válida'
+          fbp: Joi.alternatives().try(
+            Joi.string().allow(''),
+            Joi.allow(null)
+          ).messages({
+            'alternatives.match': 'O fbp deve ser uma string ou nulo',
+            'string.base': 'O fbp deve ser uma string ou nulo'
           }),
           
           // Outros campos de user_data
