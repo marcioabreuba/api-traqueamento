@@ -12,7 +12,9 @@ const { validateEventData, validateUserData, normalizeLocation } = require('../u
 const createEvent = catchAsync(async (req, res) => {
   try {
     logger.info('Iniciando processamento de novo evento');
-    logger.info('Dados recebidos:', JSON.stringify(req.body, null, 2));
+    logger.info('Headers recebidos:', JSON.stringify(req.headers, null, 2));
+    logger.info('Body recebido:', JSON.stringify(req.body, null, 2));
+    logger.info('Query params:', JSON.stringify(req.query, null, 2));
     
     // Extrair IP do cliente
     const clientIp = req.ip || req.connection.remoteAddress;

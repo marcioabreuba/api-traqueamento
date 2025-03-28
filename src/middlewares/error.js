@@ -38,16 +38,18 @@ const errorHandler = (err, req, res, next) => {
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   };
 
+  // Logging apropriado baseado no ambiente
   if (process.env.NODE_ENV === 'development') {
-    logger.error(err);
+    logger.error('Erro detalhado:', err);
   } else {
-    // Em produção, não enviamos o stack trace
     logger.error({
       code: statusCode,
       message,
       path: req.path,
       method: req.method,
       ip: req.ip,
+      body: req.body,
+      headers: req.headers
     });
   }
 

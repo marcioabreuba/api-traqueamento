@@ -80,6 +80,7 @@ const validateUserData = (userData) => {
 
 const validateEventData = (eventData) => {
   if (!eventData) {
+    logger.error('Dados do evento não fornecidos');
     throw new ApiError(httpStatus.BAD_REQUEST, 'Dados do evento são obrigatórios');
   }
 
@@ -88,28 +89,41 @@ const validateEventData = (eventData) => {
 
   // Validar campos obrigatórios
   const requiredFields = ['event_name', 'pixel_id'];
-  const missingFields = requiredFields.filter(field => !eventData[field]);
+  const missingFields = requiredFields.filter(field => {
+    const value = eventData[field];
+    const isMissing = value === undefined || value === null || value === '';
+    if (isMissing) {
+      logger.error(`Campo ${field} ausente ou vazio`);
+    }
+    return isMissing;
+  });
 
   if (missingFields.length > 0) {
+    const errorMessage = `Campos obrigatórios ausentes: ${missingFields.join(', ')}`;
+    logger.error(errorMessage);
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      `Campos obrigatórios ausentes: ${missingFields.join(', ')}`
+      errorMessage
     );
   }
 
   // Validar formato do pixel_id
   if (!/^\d+$/.test(eventData.pixel_id)) {
+    const errorMessage = 'pixel_id deve conter apenas números';
+    logger.error(errorMessage);
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      'pixel_id deve conter apenas números'
+      errorMessage
     );
   }
 
   // Validar formato do event_name
   if (typeof eventData.event_name !== 'string' || eventData.event_name.trim().length === 0) {
+    const errorMessage = 'event_name deve ser uma string não vazia';
+    logger.error(errorMessage);
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      'event_name deve ser uma string não vazia'
+      errorMessage
     );
   }
 
