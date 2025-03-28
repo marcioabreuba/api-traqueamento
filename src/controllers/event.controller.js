@@ -76,12 +76,21 @@ const createEvent = catchAsync(async (req, res) => {
       });
     } catch (error) {
       logger.error('Erro na validação dos dados:', error);
-      throw error;
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        error.message || 'Erro na validação dos dados'
+      );
     }
   } catch (error) {
     logger.error('Erro ao processar evento:', error);
+    if (error instanceof ApiError) {
+      throw error;
+    }
     throw new ApiError(
-      error.statusCode || httpStatus.INTERNAL_SERVER_ERROR,
+      httpStatus.INTERNAL_SERVER_ERROR,
       error.message || 'Erro ao processar evento',
       false,
       error.stack

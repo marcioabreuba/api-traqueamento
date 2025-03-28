@@ -6,14 +6,15 @@ const { Prisma } = require('@prisma/client');
 
 const errorConverter = (err, req, res, next) => {
   let error = err;
+  
+  // Se não for uma instância de ApiError, converter
   if (!(error instanceof ApiError)) {
-    const statusCode =
-      error.statusCode || error instanceof Prisma.PrismaClientKnownRequestError
-        ? httpStatus.BAD_REQUEST
-        : httpStatus.INTERNAL_SERVER_ERROR;
+    const statusCode = error.statusCode || 
+      (error instanceof Prisma.PrismaClientKnownRequestError ? httpStatus.BAD_REQUEST : httpStatus.INTERNAL_SERVER_ERROR);
     const message = error.message || httpStatus[statusCode];
     error = new ApiError(statusCode, message, false, err.stack);
   }
+  
   next(error);
 };
 
@@ -31,6 +32,7 @@ const errorHandler = (err, req, res, next) => {
   }
 
   const response = {
+    success: false,
     code: statusCode,
     message,
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),

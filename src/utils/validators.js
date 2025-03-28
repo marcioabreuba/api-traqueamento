@@ -87,21 +87,34 @@ const validateEventData = (eventData) => {
   logger.info('Dados recebidos:', JSON.stringify(eventData, null, 2));
 
   // Validar campos obrigatórios
-  if (!eventData.event_name) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'event_name é obrigatório');
-  }
+  const requiredFields = ['event_name', 'pixel_id'];
+  const missingFields = requiredFields.filter(field => !eventData[field]);
 
-  if (!eventData.pixel_id) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'pixel_id é obrigatório');
+  if (missingFields.length > 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Campos obrigatórios ausentes: ${missingFields.join(', ')}`
+    );
   }
 
   // Validar formato do pixel_id
   if (!/^\d+$/.test(eventData.pixel_id)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'pixel_id deve conter apenas números');
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'pixel_id deve conter apenas números'
+    );
+  }
+
+  // Validar formato do event_name
+  if (typeof eventData.event_name !== 'string' || eventData.event_name.trim().length === 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'event_name deve ser uma string não vazia'
+    );
   }
 
   const validated = {
-    event_name: eventData.event_name,
+    event_name: eventData.event_name.trim(),
     pixel_id: eventData.pixel_id,
     event_time: validateTimestamp(eventData.event_time),
     event_source_url: validateUrl(eventData.event_source_url),
