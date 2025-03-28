@@ -16,7 +16,7 @@ const createEvent = catchAsync(async (req, res) => {
 
     // Validar dados do evento
     try {
-      const { error } = eventValidation.body.validate(req.body);
+      const { error } = eventValidation.createEvent.body.validate(req.body);
       if (error) {
         logger.error('Erro na validação dos dados:', error);
         throw new ApiError(
