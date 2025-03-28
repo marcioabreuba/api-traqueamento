@@ -6,11 +6,17 @@ const eventController = require('../../controllers/event.controller');
 
 const router = express.Router();
 
+// Rota principal para envio de eventos
+router
+  .route('/send')
+  .post(validate(eventValidation.createEvent), eventController.createEvent);
+
+// Rota para consulta de eventos
 router
   .route('/')
-  .post(validate(eventValidation.createEvent), eventController.createEvent)
   .get(auth('getEvents'), validate(eventValidation.getEvents), eventController.getEvents);
 
+// Rota para obter evento específico
 router
   .route('/:eventId')
   .get(auth('getEvents'), validate(eventValidation.getEvent), eventController.getEvent);

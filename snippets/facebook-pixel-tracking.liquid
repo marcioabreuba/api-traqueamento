@@ -97,7 +97,7 @@ if (typeof fbq !== 'undefined') {
 
             // Envia para nossa API
             console.log(`[Traq] Enviando evento para a API: ${eventType}`);
-            const apiResponse = await fetch('https://api-traqueamento.onrender.com/events/send', {
+            const apiResponse = await fetch('https://api-traqueamento.onrender.com/v1/events/send', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 
@@ -121,7 +121,7 @@ if (typeof fbq !== 'undefined') {
             setTimeout(async () => {
                 try {
                     console.log(`[Traq] Tentando reenviar evento ${eventType}...`);
-                    const retryResponse = await fetch('https://api-traqueamento.onrender.com/events/send', {
+                    const retryResponse = await fetch('https://api-traqueamento.onrender.com/v1/events/send', {
                         method: 'POST',
                         credentials: 'include',
                         headers: { 
