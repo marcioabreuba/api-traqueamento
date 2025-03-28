@@ -7,14 +7,7 @@ const config = require('../config/config');
 
 // Configuração do retry
 const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; // 1 segundo
-
-/**
- * Aguardar um tempo específico
- * @param {number} ms - Tempo em milissegundos
- * @returns {Promise<void>}
- */
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const RETRY_DELAY = 1000; // 1 segundo entre tentativas
 
 /**
  * Log formatado dos dados do evento no estilo do Pixel Helper
@@ -25,7 +18,7 @@ const logEventDetails = (pixelId, eventData, testEventCode) => {
   logger.info(`🎯 Pixel ID: ${pixelId}`);
   logger.info(`📝 Event Name: ${eventData.eventName}`);
   logger.info(`🕒 Event Time: ${new Date(eventData.eventTime * 1000).toISOString()}`);
-  
+
   if (eventData.eventSourceUrl) {
     logger.info(`🔗 Source URL: ${eventData.eventSourceUrl}`);
   }
@@ -73,23 +66,16 @@ const logEventDetails = (pixelId, eventData, testEventCode) => {
  */
 const formatEventData = (data) => {
   logger.debug('Iniciando formatação dos dados do evento');
-  
-  const {
-    eventName,
-    eventTime,
-    userData = {},
-    customData = {},
-    eventSourceUrl,
-    eventId = uuidv4(),
-    pixelId
-  } = data;
+
+  const { eventName, eventTime, userData = {}, customData = {}, eventSourceUrl, eventId = uuidv4() } = data;
 
   // Log detalhado do evento
-  logEventDetails(pixelId, data, null);
+  logEventDetails(data.pixelId, data, null);
 
   logger.info(`Formatando evento: ${eventName} (ID: ${eventId})`);
 
-  // Processar userData
+  // Processar userData conforme especificação oficial do Facebook
+  // https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/customer-information-parameters
   const formattedUserData = {
     client_ip_address: userData.ip || null,
     client_user_agent: userData.userAgent || null,
@@ -138,14 +124,15 @@ const formatEventData = (data) => {
     logger.debug(`FBP adicionado aos dados do usuário: ${userData.fbp}`);
   }
 
-  // Construir evento
+  // Construir evento conforme especificação do Facebook Conversions API
+  // https://developers.facebook.com/docs/marketing-api/conversions-api/parameters
   const event = {
     event_name: eventName,
     event_time: eventTime,
     user_data: formattedUserData,
-    custom_data: customData,
+    custom_data: customData || {},
     event_id: eventId,
-    action_source: 'website', // Adicionado para indicar que é server-side
+    action_source: 'website', // Identifica a origem do evento como website
   };
 
   // Adicionar URL de origem, se fornecida
@@ -167,19 +154,24 @@ const formatEventData = (data) => {
  * @returns {Promise<void>}
  */
 const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
-  let lastError = null;
-  
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  // Usar uma cópia local do eventData para evitar modificar o parâmetro original
+  const eventDataCopy = { ...eventData };
+
+  // Transformar loop for em um loop diferente para evitar await no loop
+  let attempt = 1;
+
+  const tryEvent = async () => {
     try {
-      logger.info(`Tentativa ${attempt} de ${MAX_RETRIES} de envio do evento ${eventData.eventName}`);
-      
+      logger.info(`Tentativa ${attempt} de ${MAX_RETRIES} de envio do evento ${eventDataCopy.eventName}`);
+
       // Validar dados obrigatórios
       if (!pixelId) {
         logger.error('Pixel ID não fornecido');
         throw new ApiError(
           httpStatus.BAD_REQUEST,
           'Pixel ID é obrigatório para envio ao Facebook',
-          true
+          'MissingPixelIdError',
+          true,
         );
       }
 
@@ -188,98 +180,126 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
           'Access Token é obrigatório para envio ao Facebook',
-          true
+          'MissingAccessTokenError',
+          true,
         );
       }
 
-      if (!eventData.eventName) {
+      if (!eventDataCopy.eventName) {
         logger.error('Nome do evento não fornecido');
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          'Nome do evento é obrigatório',
-          true
-        );
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Nome do evento é obrigatório', 'MissingEventNameError', true);
       }
 
-      if (!eventData.eventTime) {
-        eventData.eventTime = Math.floor(Date.now() / 1000);
-      }
-
-      logger.info(`Iniciando envio de evento para pixel ${pixelId}`);
-      
-      // Log detalhado do evento
-      logEventDetails(pixelId, eventData, testCode);
-
-      // Formatar dados do evento
-      const formattedEvent = formatEventData({
-        ...eventData,
-        pixelId
-      });
-      logger.info(`Formatando evento: ${eventData.eventName} (ID: ${formattedEvent.event_id})`);
-      logger.info('Dados do evento formatados com sucesso');
-
-      // Preparar payload para a API do Facebook
-      const payload = {
-        data: [formattedEvent],
-        test_event_code: testCode,
-        access_token: accessToken
+      // Definir eventTime se não existir, sem modificar o parâmetro original
+      const finalEventData = {
+        ...eventDataCopy,
+        eventTime: eventDataCopy.eventTime || Math.floor(Date.now() / 1000),
       };
 
+      logger.info(`Iniciando envio de evento para pixel ${pixelId}`);
+
+      // Log detalhado do evento
+      logEventDetails(pixelId, finalEventData, testCode);
+
+      // Formatar dados do evento
+      const formattedEvent = formatEventData(finalEventData);
+      logger.info(`Formatando evento: ${finalEventData.eventName} (ID: ${formattedEvent.event_id})`);
+      logger.info('Dados do evento formatados com sucesso');
+
+      // Preparar payload conforme formato oficial do Facebook
+      // https://developers.facebook.com/docs/marketing-api/conversions-api/using-the-api
+      const payload = {
+        data: [formattedEvent],
+        access_token: accessToken,
+      };
+
+      // Adicionar test_event_code apenas se estiver definido
+      if (testCode && testCode.trim() !== '') {
+        payload.test_event_code = testCode;
+      }
+
       // Log do payload completo para depuração
-      logger.debug('Payload completo enviado para a API do Facebook:', 
-        JSON.stringify(payload, null, 2));
+      logger.debug('Payload completo enviado para a API do Facebook:', JSON.stringify(payload, null, 2));
+
+      // Endereço e formato correto da API conforme documentação
+      const apiUrl = `${config.facebook.apiUrl}/${pixelId}/events`;
+      logger.debug(`Enviando para URL: ${apiUrl}`);
 
       // Enviar evento para o Facebook
-      const response = await axios.post(
-        `${config.facebook.apiUrl}/${pixelId}/events`,
-        payload
-      );
+      const response = await axios.post(apiUrl, payload);
 
       // Verificar resposta
       if (response.data && response.data.events_received) {
         logger.info(`Evento enviado com sucesso para o Facebook (ID: ${formattedEvent.event_id})`);
+        logger.debug('Resposta completa do Facebook:', JSON.stringify(response.data, null, 2));
         return response.data;
-      } else {
-        throw new Error('Resposta inválida do Facebook');
       }
+      throw new Error(`Resposta inválida do Facebook: ${JSON.stringify(response.data || {})}`);
     } catch (error) {
-      lastError = error;
-      
-      // Log detalhado do erro
-      if (error.response) {
-        // O servidor respondeu com um status fora do intervalo 2xx
-        logger.error(`Erro de resposta do Facebook: Status ${error.response.status}`);
-        logger.error('Dados de erro:', error.response.data);
-        logger.error('Headers:', error.response.headers);
-      } else if (error.request) {
-        // A requisição foi feita mas não houve resposta
-        logger.error('Sem resposta do Facebook:', error.request);
-      } else {
-        // Algo aconteceu ao configurar a requisição
-        logger.error('Erro ao configurar requisição:', error.message);
-      }
-      
-      logger.error(`Erro na tentativa ${attempt} de ${MAX_RETRIES}:`, error.message);
+      // Adicionar detalhes mais específicos sobre o erro
+      logger.error(`Tentativa ${attempt} falhou ao enviar evento para o Facebook:`, {
+        error: error.message,
+        stack: error.stack,
+        attempt,
+        eventName: eventDataCopy.eventName,
+        pixelId,
+      });
 
-      // Se for o último retry, propaga o erro
+      // Se for a última tentativa, lançar erro
       if (attempt === MAX_RETRIES) {
-        const statusCode = httpStatus.BAD_GATEWAY; // Código 502 para erros em serviços externos
-        throw new ApiError(
-          statusCode,
-          `Erro ao enviar evento para o Facebook após ${MAX_RETRIES} tentativas: ${error.message}`,
-          'FacebookApiError',
-          true
-        );
+        logger.error(`Todas as ${MAX_RETRIES} tentativas falharam para o evento ${eventDataCopy.eventName}`);
+
+        let errorMessage = 'Falha ao enviar evento para o Facebook após múltiplas tentativas';
+        let statusCode = httpStatus.BAD_GATEWAY;
+
+        // Extrair detalhes do erro mais úteis
+        if (error.response) {
+          // Erro com resposta do servidor (erro HTTP)
+          statusCode = error.response.status;
+          errorMessage = `Erro ${statusCode} do Facebook: ${JSON.stringify(error.response.data)}`;
+          logger.error('Detalhes da resposta de erro:', {
+            status: statusCode,
+            data: error.response.data,
+            headers: error.response.headers,
+          });
+        } else if (error.request) {
+          // Erro sem resposta (timeout, DNS, etc)
+          errorMessage = `Erro de conexão com o Facebook: ${error.message}`;
+          logger.error('Detalhes do erro de requisição:', {
+            request: error.request,
+            message: error.message,
+          });
+        } else {
+          // Erro de configuração ou outro
+          errorMessage = `Erro ao configurar requisição para o Facebook: ${error.message}`;
+          logger.error('Detalhes do erro de configuração:', {
+            message: error.message,
+            stack: error.stack,
+          });
+        }
+
+        throw new ApiError(statusCode, errorMessage, 'FacebookApiError', true, error.stack);
       }
 
-      // Aguardar antes de tentar novamente
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * attempt));
+      // Incrementar tentativa e usar espera segura
+      attempt += 1;
+      // Esperar antes da próxima tentativa
+      logger.info(`Aguardando ${RETRY_DELAY * attempt}ms antes da próxima tentativa`);
+      await new Promise((resolve) => {
+        setTimeout(resolve, RETRY_DELAY * attempt);
+      });
+
+      // Chamar recursivamente para a próxima tentativa
+      return tryEvent();
     }
-  }
+  };
+
+  // Iniciar as tentativas
+  return tryEvent();
 };
 
 module.exports = {
   formatEventData,
   sendEvent,
-  logEventDetails
-}; 
+  logEventDetails,
+};
