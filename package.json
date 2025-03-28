@@ -4,7 +4,7 @@
   "description": "A boilerplate for building production-ready RESTful APIs using Node.js, Express, and Mongoose",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0 <19.0.0"
+    "node": ">=18.0.0 <23.0.0"
   },
   "scripts": {
     "start": "node src/index.js",
@@ -49,9 +49,10 @@
   "devDependencies": {
     "@types/jest": "29.5.11",
     "@types/node": "20.10.5",
-    "eslint": "8.56.0",
+    "eslint": "^8.57.0",
     "eslint-config-airbnb-base": "^15.0.0",
     "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-jest": "^28.11.0",
     "eslint-plugin-prettier": "^5.1.2",
     "eslint-plugin-security": "^2.1.0",
