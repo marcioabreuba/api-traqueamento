@@ -36,13 +36,25 @@ const createEvent = async (eventData, clientIp) => {
       }
     }
 
+    // Garantir que o pixelId esteja definido
+    if (!eventData.pixelId) {
+      eventData.pixelId = config.facebook.pixelId;
+      if (!eventData.pixelId) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          'Pixel ID não configurado',
+          true
+        );
+      }
+    }
+
     // Criar evento no banco de dados
     const event = await prisma.event.create({
       data: {
         id: uuidv4(),
         pixelId: eventData.pixelId,
         eventName: eventData.eventName,
-        eventTime: eventData.eventTime,
+        eventTime: eventData.eventTime || Math.floor(Date.now() / 1000),
         sourceUrl: eventData.sourceUrl,
         userData: eventData.userData || {},
         customData: eventData.customData || {},
@@ -61,6 +73,13 @@ const createEvent = async (eventData, clientIp) => {
     return event;
   } catch (error) {
     logger.error('Erro ao processar evento:', error);
+    
+    // Se for um ApiError, propaga o erro
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    // Caso contrário, cria um novo ApiError
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
       'Erro ao processar evento',

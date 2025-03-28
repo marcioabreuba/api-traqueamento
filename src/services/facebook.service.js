@@ -145,18 +145,36 @@ const formatEventData = (data) => {
 
 /**
  * Enviar evento para a Conversions API do Facebook
- * @param {string} pixelId - ID do pixel do Facebook
- * @param {string} accessToken - Token de acesso do Facebook
  * @param {Object} eventData - Dados do evento
- * @param {string} testEventCode - Código de teste opcional
  * @returns {Promise<Object>}
  */
-const sendEvent = async (pixelId, accessToken, eventData, testEventCode = null) => {
+const sendEvent = async (eventData) => {
   try {
-    logger.info(`Iniciando envio de evento para pixel ${pixelId}`);
+    // Validar dados obrigatórios
+    if (!eventData.pixelId) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Pixel ID é obrigatório',
+        true
+      );
+    }
+
+    if (!eventData.eventName) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Nome do evento é obrigatório',
+        true
+      );
+    }
+
+    if (!eventData.eventTime) {
+      eventData.eventTime = Math.floor(Date.now() / 1000);
+    }
+
+    logger.info(`Iniciando envio de evento para pixel ${eventData.pixelId}`);
     
     // Log detalhado do evento
-    logEventDetails(pixelId, eventData, testEventCode);
+    logEventDetails(eventData.pixelId, eventData, config.facebook.testEventCode);
 
     // Formatar dados do evento
     const formattedEvent = formatEventData(eventData);
@@ -166,14 +184,14 @@ const sendEvent = async (pixelId, accessToken, eventData, testEventCode = null) 
     // Preparar payload para a API do Facebook
     const payload = {
       data: [formattedEvent],
-      test_event_code: testEventCode,
-      access_token: accessToken
+      test_event_code: config.facebook.testEventCode,
+      access_token: config.facebook.accessToken
     };
 
     // Enviar evento para o Facebook
     logger.info(`Enviando evento ${eventData.eventName} para o Facebook`);
     const response = await axios.post(
-      `https://graph.facebook.com/v18.0/${pixelId}/events`,
+      `https://graph.facebook.com/v18.0/${eventData.pixelId}/events`,
       payload,
       {
         headers: {
@@ -191,10 +209,17 @@ const sendEvent = async (pixelId, accessToken, eventData, testEventCode = null) 
       logger.error('Status:', error.response.status);
       logger.error('Headers:', error.response.headers);
     }
+
+    // Se for um ApiError, propaga o erro
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    // Caso contrário, cria um novo ApiError
     throw new ApiError(
-      httpStatus.INTERNAL_SERVER_ERROR,
-      'Falha ao enviar evento para o Facebook',
-      false,
+      error.response?.status || httpStatus.INTERNAL_SERVER_ERROR,
+      error.response?.data?.error?.message || 'Falha ao enviar evento para o Facebook',
+      true,
       error.stack
     );
   }
