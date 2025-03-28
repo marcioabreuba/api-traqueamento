@@ -148,41 +148,55 @@ const formatEventData = (data) => {
  * @param {string} pixelId - ID do pixel do Facebook
  * @param {string} accessToken - Token de acesso do Facebook
  * @param {Object} eventData - Dados do evento
- * @param {string} testCode - Código de teste opcional
+ * @param {string} testEventCode - Código de teste opcional
  * @returns {Promise<Object>}
  */
-const sendEvent = async (pixelId, accessToken, eventData, testCode = null) => {
+const sendEvent = async (pixelId, accessToken, eventData, testEventCode = null) => {
   try {
     logger.info(`Iniciando envio de evento para pixel ${pixelId}`);
     
-    // Adiciona pixelId aos dados do evento
-    const eventDataWithPixel = { ...eventData, pixelId };
-    const formattedEvent = formatEventData(eventDataWithPixel);
-    const apiUrl = `${config.facebook.apiUrl}/${pixelId}/events`;
+    // Log detalhado do evento
+    logEventDetails(pixelId, eventData, testEventCode);
 
+    // Formatar dados do evento
+    const formattedEvent = formatEventData(eventData);
+    logger.info(`Formatando evento: ${eventData.eventName} (ID: ${formattedEvent.event_id})`);
+    logger.info('Dados do evento formatados com sucesso');
+
+    // Preparar payload para a API do Facebook
     const payload = {
       data: [formattedEvent],
-      access_token: accessToken,
-      test_event_code: testCode || undefined,
+      test_event_code: testEventCode,
+      access_token: accessToken
     };
 
+    // Enviar evento para o Facebook
     logger.info(`Enviando evento ${eventData.eventName} para o Facebook`);
-    logger.debug(`Payload: ${JSON.stringify(payload, null, 2)}`);
-    
-    const response = await axios.post(apiUrl, payload);
-    
+    const response = await axios.post(
+      `https://graph.facebook.com/v18.0/${pixelId}/events`,
+      payload,
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
     logger.info('Evento enviado com sucesso para o Facebook');
-    logger.debug(`Resposta: ${JSON.stringify(response.data, null, 2)}`);
-    
     return response.data;
   } catch (error) {
-    logger.error(`Erro ao enviar evento para o Facebook: ${error.message}`);
+    logger.error('Erro ao enviar evento para o Facebook:', error.message);
     if (error.response) {
-      logger.error(`Resposta de erro: ${JSON.stringify(error.response.data)}`);
-      logger.error(`Status: ${error.response.status}`);
-      logger.error(`Headers: ${JSON.stringify(error.response.headers)}`);
+      logger.error('Resposta de erro:', error.response.data);
+      logger.error('Status:', error.response.status);
+      logger.error('Headers:', error.response.headers);
     }
-    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Falha ao enviar evento para o Facebook');
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      'Falha ao enviar evento para o Facebook',
+      false,
+      error.stack
+    );
   }
 };
 
