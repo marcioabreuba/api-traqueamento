@@ -91,6 +91,43 @@ const initialize = async () => {
 };
 
 /**
+ * Obter localização de um IP
+ * @param {string} ip - Endereço IP para geolocalizar
+ * @returns {Promise<Object>} Dados de localização
+ */
+const getLocation = async (ip) => {
+  try {
+    if (!reader) {
+      logger.error('Leitor GeoIP não inicializado');
+      return null;
+    }
+
+    // Remover prefixo IPv6 se presente
+    const cleanIp = ip.replace(/^::ffff:/, '');
+    
+    const result = reader.get(cleanIp);
+    if (!result) {
+      logger.warn(`Nenhum resultado encontrado para o IP: ${cleanIp}`);
+      return null;
+    }
+
+    return {
+      country: result.country?.names?.en || null,
+      city: result.city?.names?.en || null,
+      latitude: result.location?.latitude || null,
+      longitude: result.location?.longitude || null,
+      timezone: result.location?.time_zone || null,
+      continent: result.continent?.names?.en || null,
+      postal: result.postal?.code || null,
+      subdivision: result.subdivisions?.[0]?.names?.en || null
+    };
+  } catch (error) {
+    logger.error(`Erro ao obter localização para IP ${ip}:`, error);
+    return null;
+  }
+};
+
+/**
  * Obter informações de localização a partir de um endereço IP
  * @param {string} ip - Endereço IP
  * @returns {Object|null} Dados de localização ou null se não encontrado
@@ -155,6 +192,7 @@ const extractClientIp = (req) => {
 
 module.exports = {
   initialize,
+  getLocation,
   lookupIp,
   extractClientIp,
 }; 
