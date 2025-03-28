@@ -8,7 +8,7 @@ const config = require('../config/config');
 /**
  * Log formatado dos dados do evento no estilo do Pixel Helper
  */
-const logEventDetails = (eventData, pixelId) => {
+const logEventDetails = (pixelId, eventData, testEventCode) => {
   logger.info('\n📊 === FACEBOOK PIXEL EVENT DETAILS === 📊');
   logger.info('----------------------------------------');
   logger.info(`🎯 Pixel ID: ${pixelId}`);
@@ -50,7 +50,7 @@ const logEventDetails = (eventData, pixelId) => {
 
   logger.info('\n⚙️ CONFIGURATION:');
   logger.info('---------------');
-  logger.info(`🔑 Test Event Code: ${config.facebook.testEventCode || 'Not configured'}`);
+  logger.info(`🔑 Test Event Code: ${testEventCode || 'Not configured'}`);
   logger.info(`📡 API Version: v18.0`);
   logger.info('----------------------------------------\n');
 };
@@ -74,7 +74,7 @@ const formatEventData = (data) => {
   } = data;
 
   // Log detalhado do evento
-  logEventDetails(data, pixelId);
+  logEventDetails(pixelId, data, null);
 
   logger.info(`Formatando evento: ${eventName} (ID: ${eventId})`);
 
