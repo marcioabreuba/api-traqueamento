@@ -57,7 +57,7 @@ const logEventDetails = (pixelId, eventData, testEventCode) => {
   logger.info('\n⚙️ CONFIGURATION:');
   logger.info('---------------');
   logger.info(`🔑 Test Event Code: ${testEventCode || 'Not configured'}`);
-  logger.info(`📡 API Version: ${config.facebook.apiVersion || 'v18.0'}`);
+  logger.info(`📡 API Version: ${config.facebook.apiUrl.match(/v\d+\.\d+/) || 'Unknown'}`);
   logger.info('----------------------------------------\n');
 };
 
@@ -243,8 +243,7 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
       logger.debug('Payload enviado para a API do Facebook:', JSON.stringify(logPayload, null, 2));
 
       // Endereço e formato correto da API conforme documentação
-      const apiVersion = config.facebook.apiVersion || 'v18.0';
-      const apiUrl = `${config.facebook.apiUrl}/${apiVersion}/${pixelId}/events`;
+      const apiUrl = `${config.facebook.apiUrl}/${pixelId}/events`;
       logger.debug(`Enviando para URL: ${apiUrl}`);
 
       // Enviar evento para o Facebook
