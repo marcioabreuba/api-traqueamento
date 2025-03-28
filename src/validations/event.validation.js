@@ -44,9 +44,7 @@ const eventValidation = {
         'string.empty': 'O nome do evento não pode estar vazio',
         'any.only': 'O nome do evento deve ser um dos valores permitidos'
       }),
-      pixel_id: Joi.string().pattern(/^\d+$/).required().messages({
-        'any.required': 'O ID do pixel é obrigatório',
-        'string.empty': 'O ID do pixel não pode estar vazio',
+      pixel_id: Joi.string().pattern(/^\d+$/).messages({
         'string.pattern.base': 'O ID do pixel deve conter apenas números'
       }),
       event_time: Joi.number().required().messages({

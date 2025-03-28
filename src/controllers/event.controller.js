@@ -48,13 +48,16 @@ const createEvent = catchAsync(async (req, res) => {
     });
   } catch (error) {
     logger.error('Erro ao processar evento:', error);
+    logger.error(`Status code do erro: ${error.statusCode}`);
+    logger.error(`É instância de ApiError? ${error instanceof ApiError}`);
     
     // Tratamento específico para erros de pixel_id
     if (
       error.message.includes('pixel_id') ||
       error.message.includes('Pixel ID') ||
       error.message.includes('ID do pixel') ||
-      error.message.includes('pixel_id é obrigatório')
+      error.message.includes('pixel_id é obrigatório') ||
+      error.message.includes('configuração de pixel não encontrada')
     ) {
       return res.status(httpStatus.BAD_REQUEST).json({
         success: false,

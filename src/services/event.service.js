@@ -49,17 +49,19 @@ const getPixelConfig = async (eventData, domain) => {
           accessToken: pixelConfig.accessToken,
           testCode: pixelConfig.testCode
         };
-      } else {
-        logger.info(`Nenhuma configuração específica encontrada para domínio: ${domain}`);
       }
     } catch (error) {
-      logger.error(`Erro ao buscar configuração do domínio: ${error.message}`);
+      logger.error('Erro ao buscar configuração do pixel:', error);
+      throw new ApiError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'Erro ao buscar configuração do pixel'
+      );
     }
   }
 
-  // 3. Usar configuração global
+  // 3. Usar configuração padrão
   if (config.facebook.pixelId) {
-    logger.info('Usando configuração global do pixel');
+    logger.info('Usando configuração padrão do pixel');
     return {
       pixelId: config.facebook.pixelId,
       accessToken: config.facebook.accessToken,
@@ -67,10 +69,10 @@ const getPixelConfig = async (eventData, domain) => {
     };
   }
 
-  logger.error('Nenhuma configuração de pixel encontrada');
+  // Se nenhuma configuração foi encontrada
   throw new ApiError(
     httpStatus.BAD_REQUEST,
-    'Configuração de pixel não encontrada. Verifique se o pixel_id está presente no payload ou se existe uma configuração válida para o domínio.'
+    'Nenhuma configuração de pixel encontrada para o domínio fornecido'
   );
 };
 
