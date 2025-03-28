@@ -6,26 +6,18 @@ const pick = require('../utils/pick');
 const logger = require('../config/logger');
 
 /**
- * Criar e enviar um evento
+ * Criar novo evento
  */
 const createEvent = catchAsync(async (req, res) => {
   logger.info('Iniciando processamento de novo evento');
-  
-  // Extrair e enriquecer dados com informações de IP, se ausentes
-  if (!req.body.user_data || !req.body.user_data.ip_address) {
-    logger.info('Dados de usuário ausentes ou sem IP, iniciando enriquecimento');
-    
-    if (!req.body.user_data) {
-      req.body.user_data = {};
-      logger.debug('Objeto user_data criado');
-    }
-    
-    // Extrair IP do cliente
-    const clientIp = geoipService.extractClientIp(req);
-    logger.info(`IP do cliente extraído: ${clientIp}`);
-    
+
+  // Extrair IP do cliente se não fornecido nos dados do usuário
+  if (!req.body.user_data?.ip_address) {
+    const clientIp = req.ip || req.connection.remoteAddress;
+    req.body.user_data = req.body.user_data || {};
     req.body.user_data.ip_address = clientIp;
-    
+    logger.info(`IP do cliente extraído: ${clientIp}`);
+
     // Tentar enriquecer com informações de geolocalização
     try {
       logger.debug('Iniciando busca de dados GeoIP');
@@ -60,7 +52,8 @@ const createEvent = catchAsync(async (req, res) => {
   }
 
   // Extrair user-agent se não fornecido
-  if (!req.body.user_data.user_agent && req.headers['user-agent']) {
+  if (!req.body.user_data?.user_agent && req.headers['user-agent']) {
+    req.body.user_data = req.body.user_data || {};
     req.body.user_data.user_agent = req.headers['user-agent'];
     logger.debug('User-Agent extraído dos headers');
   }
@@ -69,6 +62,12 @@ const createEvent = catchAsync(async (req, res) => {
   if (!req.body.event_time) {
     req.body.event_time = Math.floor(Date.now() / 1000);
     logger.debug(`Timestamp definido: ${req.body.event_time}`);
+  }
+
+  // Adicionar URL de origem se disponível
+  if (req.headers.referer) {
+    req.body.event_source_url = req.headers.referer;
+    logger.debug(`URL de origem adicionada: ${req.headers.referer}`);
   }
 
   // Processar e enviar evento

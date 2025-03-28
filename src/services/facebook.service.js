@@ -75,6 +75,7 @@ const formatEventData = (data) => {
     user_data: formattedUserData,
     custom_data: customData,
     event_id: eventId,
+    action_source: 'website', // Adicionado para indicar que é server-side
   };
 
   // Adicionar URL de origem, se fornecida
@@ -105,13 +106,8 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode = null) => {
     const payload = {
       data: [formattedEvent],
       access_token: accessToken,
+      test_event_code: testCode || undefined,
     };
-
-    // Adicionar test_event_code se fornecido
-    if (testCode) {
-      payload.test_event_code = testCode;
-      logger.debug(`Código de teste adicionado: ${testCode}`);
-    }
 
     logger.info(`Enviando evento ${eventData.eventName} para o Facebook`);
     logger.debug(`Payload: ${JSON.stringify(payload, null, 2)}`);

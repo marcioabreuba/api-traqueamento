@@ -80,16 +80,6 @@ if (typeof fbq !== 'undefined') {
                 ...data
             };
 
-            // Adiciona dados do usuário se disponível
-            {% if customer %}
-            Object.assign(eventData, {
-                em: {{customer.email | json}},
-                fn: {{customer.first_name | json}},
-                ln: {{customer.last_name | json}},
-                ph: {{customer.phone | json}}
-            });
-            {% endif %}
-
             // Envia o evento para o Facebook
             fbq('track', eventType, eventData, { eventID: eventId });
 
@@ -119,90 +109,164 @@ if (typeof fbq !== 'undefined') {
     // PageView imediato
     fbq('track', 'PageView', initData);
 
-    // Eventos específicos do Shopify
+    // Eventos específicos da Yampi
     document.addEventListener('DOMContentLoaded', function() {
         // ViewHome event
-        {% if template contains 'index' %}
-        sendEvent('ViewHome', {
-            content_type: 'homepage',
-            content_name: 'Homepage'
-        });
-        {% endif %}
-
-        // ViewCart event
-        {% if template contains 'cart' %}
-        sendEvent('ViewCart', {
-            content_type: 'cart',
-            value: {{ cart.total_price | money_without_currency | remove: ',' }},
-            currency: {{ shop.currency | json }},
-            num_items: {{ cart.item_count }},
-            content_ids: [{% for item in cart.items %}{{ item.product.id }}{% unless forloop.last %},{% endunless %}{% endfor %}]
-        });
-        {% endif %}
-
-        // Lead event (for newsletter signup)
-        document.querySelectorAll('form[action*="/contact#contact_form"]').forEach(form => {
-            form.addEventListener('submit', function() {
-                sendEvent('Lead', {
-                    content_type: 'newsletter',
-                    content_name: 'Newsletter Signup'
-                });
-            });
-        });
-
-        // Contact event (for contact form)
-        document.querySelectorAll('form[action*="/contact"]').forEach(form => {
-            form.addEventListener('submit', function() {
-                sendEvent('Contact', {
-                    content_type: 'contact_form',
-                    content_name: 'Contact Form Submission'
-                });
-            });
-        });
-
-        {% if template contains 'product' %}
-        sendEvent('ViewContent', {
-            content_type: 'product',
-            content_name: {{ product.title | json }},
-            content_ids: ['{{ product.id }}'],
-            value: {{ product.selected_or_first_available_variant.price | money_without_currency | remove: ',' }},
-            currency: {{ shop.currency | json }}
-        });
-        {% endif %}
-
-        {% if template contains 'collection' and collection.products.size > 0 %}
-        sendEvent('ViewCategory', {
-            content_category: {{ collection.title | json }},
-            content_ids: [{% for product in collection.products limit:4 %}{{ product.id }}{% unless forloop.last %},{% endunless %}{% endfor %}]
-        });
-        {% endif %}
-
-        {% if template contains 'cart' and cart.item_count > 0 %}
-        sendEvent('AddToCart', {
-            content_ids: [{% for item in cart.items %}{{ item.product.id }}{% unless forloop.last %},{% endunless %}{% endfor %}],
-            content_type: 'product',
-            value: {{ cart.total_price | money_without_currency | remove: ',' }},
-            currency: {{ shop.currency | json }},
-            num_items: {{ cart.item_count }}
-        });
-        {% endif %}
-
-        if (window.location.pathname.includes('/checkout')) {
-            sendEvent('InitiateCheckout', {
-                content_type: 'product',
-                value: {{ cart.total_price | money_without_currency | remove: ',' }},
-                currency: {{ shop.currency | json }},
-                num_items: {{ cart.item_count }},
-                content_ids: [{% for item in cart.items %}{{ item.product.id }}{% unless forloop.last %},{% endunless %}{% endfor %}]
+        if (window.location.pathname === '/') {
+            sendEvent('ViewHome', {
+                content_type: 'homepage',
+                content_name: 'Homepage'
             });
         }
 
-        {% if template contains 'search' and search.performed %}
-        sendEvent('Search', {
-            search_string: {{ search.terms | json }},
-            content_ids: [{% for item in search.results limit:5 %}{{ item.id }}{% unless forloop.last %},{% endunless %}{% endfor %}]
+        // ViewCart event
+        if (window.location.pathname.includes('/carrinho')) {
+            const cartTotal = document.querySelector('[data-cart-total]')?.textContent;
+            const cartItems = document.querySelectorAll('[data-cart-item]');
+            
+            sendEvent('ViewCart', {
+                content_type: 'cart',
+                value: cartTotal ? parseFloat(cartTotal.replace(/[^\d,]/g, '').replace(',', '.')) : 0,
+                currency: 'BRL',
+                num_items: cartItems.length,
+                content_ids: Array.from(cartItems).map(item => item.getAttribute('data-product-id'))
+            });
+        }
+
+        // ViewContent event (produto)
+        if (window.location.pathname.includes('/produto/')) {
+            const productName = document.querySelector('[data-product-name]')?.textContent;
+            const productId = document.querySelector('[data-product-id]')?.getAttribute('data-product-id');
+            const productPrice = document.querySelector('[data-product-price]')?.textContent;
+            
+            sendEvent('ViewContent', {
+                content_type: 'product',
+                content_name: productName,
+                content_ids: [productId],
+                value: productPrice ? parseFloat(productPrice.replace(/[^\d,]/g, '').replace(',', '.')) : 0,
+                currency: 'BRL'
+            });
+        }
+
+        // AddToCart event
+        document.addEventListener('addToCart', function(e) {
+            const { productId, productName, price, quantity } = e.detail;
+            
+            sendEvent('AddToCart', {
+                content_type: 'product',
+                content_ids: [productId],
+                content_name: productName,
+                value: parseFloat(price.replace(/[^\d,]/g, '').replace(',', '.')),
+                currency: 'BRL',
+                num_items: quantity
+            });
         });
-        {% endif %}
+
+        // Checkout events
+        if (window.location.pathname.includes('/checkout')) {
+            // InitiateCheckout
+            sendEvent('InitiateCheckout', {
+                content_type: 'product',
+                value: parseFloat(document.querySelector('[data-cart-total]')?.textContent.replace(/[^\d,]/g, '').replace(',', '.') || '0'),
+                currency: 'BRL',
+                num_items: document.querySelectorAll('[data-cart-item]').length,
+                content_ids: Array.from(document.querySelectorAll('[data-cart-item]')).map(item => item.getAttribute('data-product-id'))
+            });
+
+            // StartCheckout (quando começa a preencher o formulário)
+            const checkoutForm = document.querySelector('form[data-checkout-form]');
+            if (checkoutForm) {
+                checkoutForm.addEventListener('focus', function() {
+                    sendEvent('StartCheckout');
+                }, { once: true });
+            }
+
+            // RegisterDone (quando termina o formulário)
+            if (checkoutForm) {
+                checkoutForm.addEventListener('submit', function() {
+                    sendEvent('RegisterDone');
+                });
+            }
+
+            // AddShippingInfo
+            const shippingForm = document.querySelector('form[data-shipping-form]');
+            if (shippingForm) {
+                shippingForm.addEventListener('change', function() {
+                    sendEvent('AddShippingInfo');
+                });
+            }
+
+            // AddPaymentInfo
+            const paymentForm = document.querySelector('form[data-payment-form]');
+            if (paymentForm) {
+                paymentForm.addEventListener('change', function() {
+                    sendEvent('AddPaymentInfo');
+                });
+            }
+
+            // AddCoupon
+            const couponForm = document.querySelector('form[data-coupon-form]');
+            if (couponForm) {
+                couponForm.addEventListener('submit', function() {
+                    sendEvent('AddCoupon');
+                });
+            }
+        }
+
+        // Purchase event
+        if (window.location.pathname.includes('/pedido-confirmado')) {
+            const orderTotal = document.querySelector('[data-order-total]')?.textContent;
+            const orderItems = document.querySelectorAll('[data-order-item]');
+            const paymentMethod = document.querySelector('[data-payment-method]')?.textContent;
+            
+            const eventData = {
+                content_type: 'product',
+                value: orderTotal ? parseFloat(orderTotal.replace(/[^\d,]/g, '').replace(',', '.')) : 0,
+                currency: 'BRL',
+                num_items: orderItems.length,
+                content_ids: Array.from(orderItems).map(item => item.getAttribute('data-product-id')),
+                payment_method: paymentMethod
+            };
+
+            // Determina o tipo específico de Purchase baseado no método de pagamento
+            let purchaseEvent = 'Purchase';
+            if (paymentMethod) {
+                switch(paymentMethod.toLowerCase()) {
+                    case 'pix':
+                        purchaseEvent = 'Purchase - pix';
+                        break;
+                    case 'cartão de crédito':
+                        purchaseEvent = 'Purchase - credit_card';
+                        break;
+                    case 'boleto':
+                        purchaseEvent = 'Purchase - billet';
+                        break;
+                }
+            }
+
+            // Verifica se é um pedido de alto valor
+            const totalValue = parseFloat(orderTotal.replace(/[^\d,]/g, '').replace(',', '.') || '0');
+            if (totalValue >= 5000) { // Ajuste este valor conforme necessário
+                purchaseEvent = 'Purchase - high_ticket';
+            }
+
+            sendEvent(purchaseEvent, eventData);
+        }
+
+        // Search event
+        const searchForm = document.querySelector('form[data-search-form]');
+        if (searchForm) {
+            searchForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const searchTerm = this.querySelector('input[type="search"]').value;
+                const searchResults = document.querySelectorAll('[data-search-result]');
+                
+                sendEvent('Search', {
+                    search_string: searchTerm,
+                    content_ids: Array.from(searchResults).map(result => result.getAttribute('data-product-id'))
+                });
+            });
+        }
     });
 }
 </script>

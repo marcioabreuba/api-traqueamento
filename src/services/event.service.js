@@ -140,6 +140,7 @@ const processEvent = async (eventData, domainOrPixelId) => {
       userData: savedEvent.userData,
       customData: savedEvent.customData,
       eventId: savedEvent.id,
+      eventSourceUrl: eventData.event_source_url,
     };
 
     const fbResponse = await facebookService.sendEvent(pixelId, accessToken, fbDataToSend, testCode);
