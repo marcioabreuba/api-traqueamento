@@ -5,49 +5,58 @@ const ApiError = require('../utils/ApiError');
 const logger = require('../config/logger');
 const config = require('../config/config');
 const facebookService = require('./facebook.service');
+const geoipService = require('./geoip.service');
 
 const prisma = new PrismaClient();
 
 /**
- * Criar novo evento
+ * Criar um novo evento
  * @param {Object} eventData
- * @returns {Promise<Object>}
+ * @returns {Promise<Event>}
  */
 const createEvent = async (eventData, clientIp) => {
   try {
-    // Preparar dados do evento no formato correto do Prisma
-    const eventToSave = {
-      pixelId: config.facebook.pixelId,
-      eventName: eventData.event_name,
-      eventTime: eventData.event_time || Math.floor(Date.now() / 1000),
-      userData: {
-        ...eventData.user_data,
-        ip: clientIp
-      },
-      customData: eventData.custom_data || {},
-      status: 'pending'
-    };
+    logger.info('Iniciando processamento de novo evento');
+
+    // Extrair IP do cliente
+    const ip = clientIp || eventData.userData?.ip;
+    logger.info(`IP do cliente extraído: ${ip}`);
+
+    // Enriquecer dados com GeoIP
+    if (ip) {
+      const geoData = await geoipService.getLocation(ip);
+      if (geoData) {
+        logger.info(`Dados GeoIP obtidos para IP ${ip}:`);
+        logger.info(JSON.stringify(geoData, null, 2));
+        eventData.userData = {
+          ...eventData.userData,
+          ...geoData,
+        };
+        logger.info('Dados de geolocalização enriquecidos com sucesso');
+      }
+    }
 
     // Criar evento no banco de dados
     const event = await prisma.event.create({
-      data: eventToSave
+      data: {
+        id: uuidv4(),
+        pixelId: eventData.pixelId,
+        eventName: eventData.eventName,
+        eventTime: eventData.eventTime,
+        sourceUrl: eventData.sourceUrl,
+        userData: eventData.userData || {},
+        customData: eventData.customData || {},
+        value: eventData.value,
+        currency: eventData.currency,
+      },
     });
 
     // Enviar evento para o Facebook
-    await facebookService.sendEvent(
-      config.facebook.pixelId,
-      config.facebook.accessToken,
-      {
-        eventName: event.eventName,
-        eventTime: event.eventTime,
-        eventSourceUrl: eventData.event_source_url,
-        userData: event.userData,
-        customData: event.customData,
-        value: eventData.value,
-        currency: eventData.currency
-      },
-      config.facebook.testEventCode
-    );
+    if (eventData.pixelId) {
+      logger.info(`Iniciando envio de evento para pixel ${eventData.pixelId}`);
+      await facebookService.sendEvent(eventData);
+      logger.info('Evento enviado com sucesso para o Facebook');
+    }
 
     return event;
   } catch (error) {
@@ -55,7 +64,7 @@ const createEvent = async (eventData, clientIp) => {
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
       'Erro ao processar evento',
-      false,
+      true,
       error.stack
     );
   }

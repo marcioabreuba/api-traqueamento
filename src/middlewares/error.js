@@ -18,44 +18,38 @@ const errorConverter = (err, req, res, next) => {
 };
 
 const errorHandler = (err, req, res, next) => {
-  try {
-    let { statusCode, message } = err;
-    
-    // Garantir que statusCode seja um número válido
-    if (!statusCode || !Number.isInteger(statusCode)) {
-      statusCode = httpStatus.INTERNAL_SERVER_ERROR;
-    }
+  let { statusCode, message } = err;
+  
+  // Garantir que statusCode seja um número válido
+  if (!statusCode || !Number.isInteger(statusCode) || statusCode < 100 || statusCode > 599) {
+    statusCode = httpStatus.INTERNAL_SERVER_ERROR;
+  }
 
-    // Garantir que o statusCode esteja dentro do intervalo válido
-    if (statusCode < 100 || statusCode > 599) {
-      statusCode = httpStatus.INTERNAL_SERVER_ERROR;
-    }
+  // Garantir que message seja uma string
+  if (!message || typeof message !== 'string') {
+    message = httpStatus[statusCode];
+  }
 
-    if (config.env === 'production' && !err.isOperational) {
-      statusCode = httpStatus.INTERNAL_SERVER_ERROR;
-      message = httpStatus[httpStatus.INTERNAL_SERVER_ERROR];
-    }
+  const response = {
+    code: statusCode,
+    message,
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+  };
 
-    res.locals.errorMessage = err.message;
-
-    const response = {
+  if (process.env.NODE_ENV === 'development') {
+    logger.error(err);
+  } else {
+    // Em produção, não enviamos o stack trace
+    logger.error({
       code: statusCode,
       message,
-      ...(config.env === 'development' && { stack: err.stack }),
-    };
-
-    if (config.env === 'development') {
-      logger.error(err);
-    }
-
-    res.status(statusCode).send(response);
-  } catch (error) {
-    logger.error('Erro no middleware de erro:', error);
-    res.status(httpStatus.INTERNAL_SERVER_ERROR).send({
-      code: httpStatus.INTERNAL_SERVER_ERROR,
-      message: 'Erro interno do servidor'
+      path: req.path,
+      method: req.method,
+      ip: req.ip,
     });
   }
+
+  res.status(statusCode).send(response);
 };
 
 module.exports = {
