@@ -80,7 +80,13 @@ if (typeof fbq !== 'undefined') {
                 ...data,
                 event_name: eventType,
                 event_time: Math.floor(Date.now() / 1000),
-                domain: window.location.hostname
+                domain: window.location.hostname,
+                user_data: {
+                    client_ip_address: baseData.client_ip_address,
+                    client_user_agent: baseData.client_user_agent,
+                    external_id: baseData.external_id,
+                    fbp: baseData.fbp
+                }
             };
 
             console.log(`[Traq] Preparando envio do evento ${eventType}:`, eventData);
@@ -90,6 +96,7 @@ if (typeof fbq !== 'undefined') {
             console.log(`[Traq] Evento ${eventType} enviado para o Facebook com ID: ${eventId}`);
 
             // Envia para nossa API
+            console.log(`[Traq] Enviando evento para a API: ${eventType}`);
             const apiResponse = await fetch('https://api-traqueamento.onrender.com/events/send', {
                 method: 'POST',
                 credentials: 'include',
@@ -102,6 +109,7 @@ if (typeof fbq !== 'undefined') {
 
             if (!apiResponse.ok) {
                 const errorText = await apiResponse.text();
+                console.error(`[Traq] Erro na API: ${apiResponse.status} - ${errorText}`);
                 throw new Error(`Erro na API: ${apiResponse.status} - ${errorText}`);
             }
 
@@ -129,10 +137,12 @@ if (typeof fbq !== 'undefined') {
                     });
 
                     if (!retryResponse.ok) {
-                        throw new Error(`Erro no retry: ${retryResponse.status}`);
+                        const errorText = await retryResponse.text();
+                        throw new Error(`Erro no retry: ${retryResponse.status} - ${errorText}`);
                     }
 
-                    console.log(`[Traq] Evento ${eventType} reenviado com sucesso!`);
+                    const retryData = await retryResponse.json();
+                    console.log(`[Traq] Evento ${eventType} reenviado com sucesso!`, retryData);
                 } catch (retryError) {
                     console.error(`[Traq] Erro no retry do evento ${eventType}:`, retryError);
                 }
