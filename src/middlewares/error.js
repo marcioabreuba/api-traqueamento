@@ -19,6 +19,17 @@ const errorConverter = (err, req, res, next) => {
 
 const errorHandler = (err, req, res, next) => {
   let { statusCode, message } = err;
+  
+  // Garantir que statusCode seja um número válido
+  if (!statusCode || !Number.isInteger(statusCode)) {
+    statusCode = httpStatus.INTERNAL_SERVER_ERROR;
+  }
+
+  // Garantir que o statusCode esteja dentro do intervalo válido
+  if (statusCode < 100 || statusCode > 599) {
+    statusCode = httpStatus.INTERNAL_SERVER_ERROR;
+  }
+
   if (config.env === 'production' && !err.isOperational) {
     statusCode = httpStatus.INTERNAL_SERVER_ERROR;
     message = httpStatus[httpStatus.INTERNAL_SERVER_ERROR];

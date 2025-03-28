@@ -19,7 +19,8 @@ const createEvent = async (eventData, clientIp) => {
     const eventWithPixel = {
       ...eventData,
       pixelId: config.facebook.pixelId, // Adiciona o pixelId do config
-      eventName: eventData.event_name // Garante que o eventName seja passado corretamente
+      eventName: eventData.event_name, // Garante que o eventName seja passado corretamente
+      eventTime: eventData.event_time || Math.floor(Date.now() / 1000) // Garante que o eventTime seja passado corretamente
     };
 
     // Criar evento no banco de dados
