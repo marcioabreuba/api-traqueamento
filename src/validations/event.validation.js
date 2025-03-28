@@ -25,7 +25,11 @@ const eventValidation = {
         language: Joi.string(),
         referrer: Joi.string(),
         external_id: Joi.string().guid({ version: 'uuidv4' }),
-        fbp: Joi.string(),
+        fbp: Joi.string().required().messages({
+          'any.required': 'O fbp é obrigatório',
+          'string.empty': 'O fbp não pode estar vazio',
+          'string.base': 'O fbp deve ser uma string válida',
+        }),
         client_user_agent: Joi.string(),
         content_type: Joi.string(),
         content_name: Joi.string(),
@@ -45,7 +49,11 @@ const eventValidation = {
           // Campos adicionais do user_data
           client_user_agent: Joi.string(),
           external_id: Joi.string().guid({ version: 'uuidv4' }),
-          fbp: Joi.string(),
+          fbp: Joi.string().required().messages({
+            'any.required': 'O fbp é obrigatório',
+            'string.empty': 'O fbp não pode estar vazio',
+            'string.base': 'O fbp deve ser uma string válida',
+          }),
           // ... (outros campos permanecem)
         }),
         custom_data: Joi.object().keys({

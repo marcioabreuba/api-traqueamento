@@ -19,14 +19,15 @@ const createEvent = catchAsync(async (req, res) => {
       // Validação corrigida: Certifique-se de que o schema permite o campo "app"
       const { error } = eventValidation.createEvent.body.validate(req.body, { allowUnknown: false });
       if (error) {
-        logger.error('Erro na validação dos dados:', error);
+        logger.error(`Erro na validação dos dados: ${error.details.map((x) => x.message).join(', ')}`);
         throw new ApiError(
           httpStatus.BAD_REQUEST, // Status code primeiro
           `Erro de validação: ${error.details.map((x) => x.message).join(', ')}`, // Message depois
+          error.details, // Adicionando detalhes do erro
         );
       }
     } catch (error) {
-      logger.error('Erro na validação dos dados:', error);
+      logger.error(`Erro na validação dos dados: ${error.message}`);
       throw error; // Já é uma ApiError, apenas propague
     }
 
@@ -52,6 +53,7 @@ const createEvent = catchAsync(async (req, res) => {
         success: false,
         error: error.message,
         details: error.details || 'Erro na validação dos dados',
+        code: httpStatus.BAD_REQUEST,
       });
     }
 
@@ -61,6 +63,7 @@ const createEvent = catchAsync(async (req, res) => {
         success: false,
         error: error.message,
         details: error.details || 'Erro interno',
+        code: error.statusCode || httpStatus.INTERNAL_SERVER_ERROR,
       });
     }
 
@@ -69,6 +72,7 @@ const createEvent = catchAsync(async (req, res) => {
       success: false,
       error: 'Erro interno do servidor ao processar evento',
       details: error.message || 'Erro desconhecido',
+      code: httpStatus.INTERNAL_SERVER_ERROR,
     });
   }
 });
