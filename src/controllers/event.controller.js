@@ -50,7 +50,12 @@ const createEvent = catchAsync(async (req, res) => {
     logger.error('Erro ao processar evento:', error);
     
     // Tratamento específico para erros de pixel_id
-    if (error.message.includes('pixel_id') || error.message.includes('Pixel ID')) {
+    if (
+      error.message.includes('pixel_id') ||
+      error.message.includes('Pixel ID') ||
+      error.message.includes('ID do pixel') ||
+      error.message.includes('pixel_id é obrigatório')
+    ) {
       return res.status(httpStatus.BAD_REQUEST).json({
         success: false,
         error: 'Erro na configuração do pixel. Verifique se o pixel_id está presente no payload ou se existe uma configuração válida para o domínio.',
@@ -59,7 +64,11 @@ const createEvent = catchAsync(async (req, res) => {
     }
 
     // Tratamento específico para erros de validação
-    if (error.message.includes('validação') || error.message.includes('validation')) {
+    if (
+      error.message.includes('validação') ||
+      error.message.includes('validation') ||
+      error.message.includes('validate')
+    ) {
       return res.status(httpStatus.BAD_REQUEST).json({
         success: false,
         error: 'Erro na validação dos dados',
@@ -68,7 +77,11 @@ const createEvent = catchAsync(async (req, res) => {
     }
 
     // Tratamento específico para erros do Facebook
-    if (error.message.includes('Facebook') || error.message.includes('facebook')) {
+    if (
+      error.message.includes('Facebook') ||
+      error.message.includes('facebook') ||
+      error.message.includes('FB')
+    ) {
       return res.status(httpStatus.BAD_GATEWAY).json({
         success: false,
         error: 'Erro ao enviar evento para o Facebook',
@@ -76,17 +89,19 @@ const createEvent = catchAsync(async (req, res) => {
       });
     }
 
+    // Tratamento de erros ApiError com fallback
     if (error instanceof ApiError) {
-      return res.status(error.statusCode).json({
+      return res.status(error.statusCode || httpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
-        error: error.message
+        error: error.message || 'Erro interno do servidor'
       });
     }
 
+    // Fallback para erros não tratados
     return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: 'Erro interno do servidor ao processar evento',
-      details: error.message
+      details: error.message || 'Erro desconhecido'
     });
   }
 });
