@@ -2,8 +2,10 @@ const express = require('express');
 const authRoute = require('./auth.route');
 const userRoute = require('./user.route');
 const eventRoute = require('./event.route');
+const yampiRoute = require('./yampi.route');
 const docsRoute = require('./docs.route');
 const config = require('../../config/config');
+const auth = require('../../middlewares/auth');
 
 const router = express.Router();
 
@@ -19,6 +21,10 @@ const defaultRoutes = [
   {
     path: '/events',
     route: eventRoute,
+  },
+  {
+    path: '/yampi',
+    route: yampiRoute,
   },
 ];
 

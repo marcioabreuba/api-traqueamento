@@ -34,6 +34,8 @@ const envVarsSchema = Joi.object()
     MAXMIND_ACCOUNT_ID: Joi.string().description('ID de conta do MaxMind'),
     MAXMIND_LICENSE_KEY: Joi.string().description('Chave de licença do MaxMind'),
     FRONTEND_URL: Joi.string().description('URL do frontend da aplicação'),
+    // Yampi
+    YAMPI_WEBHOOK_SECRET: Joi.string().required().description('Chave secreta para validação de webhooks da Yampi'),
   })
   .unknown();
 
@@ -58,6 +60,9 @@ module.exports = {
     level: envVars.LOG_LEVEL,
   },
   frontendUrl: envVars.FRONTEND_URL,
+  yampi: {
+    webhookSecret: envVars.YAMPI_WEBHOOK_SECRET,
+  },
   facebook: {
     apiUrl: envVars.FB_API_URL || 'https://graph.facebook.com/v18.0',
     pixelId: envVars.FB_PIXEL_ID || envVars.CONVERSIONS_API_PIXEL_ID,

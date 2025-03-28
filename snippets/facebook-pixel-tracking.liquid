@@ -1,0 +1,213 @@
+<!-- Facebook Pixel Code -->
+<script>
+// Verifica se já existe um pixel inicializado
+if (typeof fbq !== 'undefined') {
+    console.warn('Meta Pixel já está inicializado');
+} else {
+    // Configurações do Pixel
+    const PIXEL_ID = '1163339595278098';
+    const APP_NAME = 'traq';
+
+    // Funções auxiliares
+    const helpers = {
+        generateEventId: () => {
+            const num1 = Math.floor(Math.random() * 10000000000000000);
+            const num2 = Math.floor(Math.random() * 10000000000000000);
+            return `${num1}.${num2}.${APP_NAME}`;
+        },
+        getLanguage: () => navigator.language || navigator.userLanguage || 'pt-BR',
+        getReferrer: () => {
+            const ref = document.referrer || 'Not Set';
+            try {
+                return ref !== 'Not Set' ? new URL(ref).hostname : ref;
+            } catch {
+                return ref;
+            }
+        },
+        getCookie: (name) => {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null;
+        },
+        generateUUID: () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        })
+    };
+
+    // Inicialização do Pixel
+    !function(f,b,e,v,n,t,s) {
+        if(f.fbq) return;
+        n=f.fbq=function(){n.callMethod ?
+        n.callMethod.apply(n,arguments) : n.queue.push(arguments)};
+        if(!f._fbq) f._fbq = n;
+        n.push=n;
+        n.loaded = !0;
+        n.version='2.0';
+        n.queue = [];
+        t=b.createElement(e); 
+        t.async = !0;
+        t.src = v;
+        s=b.getElementsByTagName(e)[0];
+        s.parentNode.insertBefore(t,s)
+    }(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
+
+    // Dados básicos para eventos
+    const getBaseEventData = () => {
+        const userId = helpers.getCookie('userId') || helpers.generateUUID();
+        const _fbp = helpers.getCookie('_fbp');
+        
+        return {
+            app: APP_NAME,
+            event_time: Math.floor(Date.now() / 1000),
+            language: helpers.getLanguage(),
+            referrer: helpers.getReferrer(),
+            external_id: userId,
+            fbp: _fbp,
+            client_user_agent: navigator.userAgent
+        };
+    };
+
+    // Função para envio de eventos
+    async function sendEvent(eventType, data = {}) {
+        const eventId = helpers.generateEventId();
+        const baseData = getBaseEventData();
+
+        try {
+            const eventData = {
+                ...baseData,
+                ...data
+            };
+
+            // Adiciona dados do usuário se disponível
+            {% if customer %}
+            Object.assign(eventData, {
+                em: {{customer.email | json}},
+                fn: {{customer.first_name | json}},
+                ln: {{customer.last_name | json}},
+                ph: {{customer.phone | json}}
+            });
+            {% endif %}
+
+            // Envia o evento para o Facebook
+            fbq('track', eventType, eventData, { eventID: eventId });
+
+            // Envia para nossa API
+            await fetch('https://api-traqueamento.onrender.com/events/send', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-Event-ID': eventId
+                },
+                body: JSON.stringify({
+                    ...eventData,
+                    eventType
+                })
+            });
+
+        } catch (error) {
+            console.error(`Erro ao rastrear evento ${eventType}:`, error);
+        }
+    }
+
+    // Inicialização do pixel
+    const initData = getBaseEventData();
+    fbq('init', PIXEL_ID, initData);
+
+    // PageView imediato
+    fbq('track', 'PageView', initData);
+
+    // Eventos específicos do Shopify
+    document.addEventListener('DOMContentLoaded', function() {
+        // ViewHome event
+        {% if template contains 'index' %}
+        sendEvent('ViewHome', {
+            content_type: 'homepage',
+            content_name: 'Homepage'
+        });
+        {% endif %}
+
+        // ViewCart event
+        {% if template contains 'cart' %}
+        sendEvent('ViewCart', {
+            content_type: 'cart',
+            value: {{ cart.total_price | money_without_currency | remove: ',' }},
+            currency: {{ shop.currency | json }},
+            num_items: {{ cart.item_count }},
+            content_ids: [{% for item in cart.items %}{{ item.product.id }}{% unless forloop.last %},{% endunless %}{% endfor %}]
+        });
+        {% endif %}
+
+        // Lead event (for newsletter signup)
+        document.querySelectorAll('form[action*="/contact#contact_form"]').forEach(form => {
+            form.addEventListener('submit', function() {
+                sendEvent('Lead', {
+                    content_type: 'newsletter',
+                    content_name: 'Newsletter Signup'
+                });
+            });
+        });
+
+        // Contact event (for contact form)
+        document.querySelectorAll('form[action*="/contact"]').forEach(form => {
+            form.addEventListener('submit', function() {
+                sendEvent('Contact', {
+                    content_type: 'contact_form',
+                    content_name: 'Contact Form Submission'
+                });
+            });
+        });
+
+        {% if template contains 'product' %}
+        sendEvent('ViewContent', {
+            content_type: 'product',
+            content_name: {{ product.title | json }},
+            content_ids: ['{{ product.id }}'],
+            value: {{ product.selected_or_first_available_variant.price | money_without_currency | remove: ',' }},
+            currency: {{ shop.currency | json }}
+        });
+        {% endif %}
+
+        {% if template contains 'collection' and collection.products.size > 0 %}
+        sendEvent('ViewCategory', {
+            content_category: {{ collection.title | json }},
+            content_ids: [{% for product in collection.products limit:4 %}{{ product.id }}{% unless forloop.last %},{% endunless %}{% endfor %}]
+        });
+        {% endif %}
+
+        {% if template contains 'cart' and cart.item_count > 0 %}
+        sendEvent('AddToCart', {
+            content_ids: [{% for item in cart.items %}{{ item.product.id }}{% unless forloop.last %},{% endunless %}{% endfor %}],
+            content_type: 'product',
+            value: {{ cart.total_price | money_without_currency | remove: ',' }},
+            currency: {{ shop.currency | json }},
+            num_items: {{ cart.item_count }}
+        });
+        {% endif %}
+
+        if (window.location.pathname.includes('/checkout')) {
+            sendEvent('InitiateCheckout', {
+                content_type: 'product',
+                value: {{ cart.total_price | money_without_currency | remove: ',' }},
+                currency: {{ shop.currency | json }},
+                num_items: {{ cart.item_count }},
+                content_ids: [{% for item in cart.items %}{{ item.product.id }}{% unless forloop.last %},{% endunless %}{% endfor %}]
+            });
+        }
+
+        {% if template contains 'search' and search.performed %}
+        sendEvent('Search', {
+            search_string: {{ search.terms | json }},
+            content_ids: [{% for item in search.results limit:5 %}{{ item.id }}{% unless forloop.last %},{% endunless %}{% endfor %}]
+        });
+        {% endif %}
+    });
+}
+</script>
+<noscript>
+  <img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id=1163339595278098&ev=PageView&noscript=1"/>
+</noscript>
+<!-- End Facebook Pixel Code --> 

@@ -23,6 +23,8 @@ services:
         value: info
       - key: GEOIP_DB_PATH
         value: ./data/GeoLite2-City.mmdb
+      - key: YAMPI_WEBHOOK_SECRET
+        sync: false
     healthCheckPath: /v1/health
     autoDeploy: true
     plan: free
