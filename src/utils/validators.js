@@ -1,5 +1,7 @@
 const validator = require('validator');
 const logger = require('../config/logger');
+const ApiError = require('./ApiError');
+const httpStatus = require('http-status');
 
 const validateEmail = (email) => {
   if (!email) return null;
@@ -77,10 +79,27 @@ const validateUserData = (userData) => {
 };
 
 const validateEventData = (eventData) => {
-  if (!eventData) return null;
+  if (!eventData) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Dados do evento são obrigatórios');
+  }
+
+  // Validar campos obrigatórios
+  if (!eventData.event_name) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'event_name é obrigatório');
+  }
+
+  if (!eventData.pixel_id) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'pixel_id é obrigatório');
+  }
+
+  // Validar formato do pixel_id
+  if (!/^\d+$/.test(eventData.pixel_id)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'pixel_id deve conter apenas números');
+  }
 
   const validated = {
-    event_name: eventData.event_name || null,
+    event_name: eventData.event_name,
+    pixel_id: eventData.pixel_id,
     event_time: validateTimestamp(eventData.event_time),
     event_source_url: validateUrl(eventData.event_source_url),
     value: validateCurrency(eventData.value),
