@@ -19,41 +19,52 @@ const errorConverter = (err, req, res, next) => {
 };
 
 const errorHandler = (err, req, res, next) => {
-  let { statusCode, message } = err;
-  
-  // Garantir que statusCode seja um número válido
-  if (!statusCode || !Number.isInteger(statusCode) || statusCode < 100 || statusCode > 599) {
-    statusCode = httpStatus.INTERNAL_SERVER_ERROR;
-  }
+  try {
+    let { statusCode, message } = err;
+    
+    // Garantir que statusCode seja um número válido
+    if (!statusCode || !Number.isInteger(statusCode) || statusCode < 100 || statusCode > 599) {
+      statusCode = httpStatus.INTERNAL_SERVER_ERROR;
+      logger.error(`Status code inválido encontrado (${statusCode}), usando 500 como fallback`);
+    }
 
-  // Garantir que message seja uma string
-  if (!message || typeof message !== 'string') {
-    message = httpStatus[statusCode];
-  }
+    // Garantir que message seja uma string
+    if (!message || typeof message !== 'string') {
+      message = httpStatus[statusCode] || 'Erro interno do servidor';
+    }
 
-  const response = {
-    success: false,
-    code: statusCode,
-    message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
-  };
-
-  // Logging apropriado baseado no ambiente
-  if (process.env.NODE_ENV === 'development') {
-    logger.error('Erro detalhado:', err);
-  } else {
-    logger.error({
+    const response = {
+      success: false,
       code: statusCode,
       message,
-      path: req.path,
-      method: req.method,
-      ip: req.ip,
-      body: req.body,
-      headers: req.headers
+      ...(config.env === 'development' && { stack: err.stack }),
+    };
+
+    // Logging apropriado baseado no ambiente
+    if (config.env === 'development') {
+      logger.error(`Erro detalhado (${statusCode}):`, err);
+    } else {
+      logger.error({
+        code: statusCode,
+        message,
+        path: req.path,
+        method: req.method,
+        ip: req.ip,
+        bodyParams: JSON.stringify(req.body, null, 2),
+        headers: req.headers
+      });
+    }
+
+    res.status(statusCode).json(response);
+  } catch (error) {
+    // Fallback para caso de erro no próprio errorHandler
+    logger.error('Erro crítico no errorHandler:', error);
+    res.status(500).json({
+      success: false,
+      code: 500,
+      message: 'Erro interno do servidor'
     });
   }
-
-  res.status(statusCode).json(response);
 };
 
 module.exports = {

@@ -84,15 +84,31 @@ const getPixelConfig = async (eventData, domain) => {
 const validateEventData = (eventData) => {
   logger.info('Iniciando validação dos dados do evento');
   
+  // Garantir que eventData não seja null ou undefined
+  if (!eventData) {
+    logger.error('Dados do evento ausentes ou inválidos');
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Dados do evento ausentes ou inválidos',
+      'EventDataInvalidError',
+      true
+    );
+  }
+  
+  // Log de debug para entender o conteúdo exato
+  logger.debug('EventData para validação:', JSON.stringify(eventData, null, 2));
+  
   // Validar campos obrigatórios
   const requiredFields = ['event_name'];
-  const missingFields = requiredFields.filter(field => !eventData[field]);
+  const missingFields = requiredFields.filter(field => !eventData[field] || eventData[field] === '');
   
   if (missingFields.length > 0) {
     logger.error(`Campos obrigatórios ausentes: ${missingFields.join(', ')}`);
+    logger.debug(`Valor do event_name recebido: ${JSON.stringify(eventData.event_name)}`);
     throw new ApiError(
       httpStatus.BAD_REQUEST,
       `Campos obrigatórios ausentes: ${missingFields.join(', ')}`,
+      'MissingFieldsError',
       true
     );
   }
@@ -104,6 +120,7 @@ const validateEventData = (eventData) => {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         'Pixel ID deve conter apenas números',
+        'InvalidPixelIdError',
         true
       );
     }
@@ -120,6 +137,7 @@ const validateEventData = (eventData) => {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         'Event time deve ser um timestamp válido',
+        'InvalidEventTimeError',
         true
       );
     }
@@ -134,6 +152,7 @@ const validateEventData = (eventData) => {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         'URL de origem inválida',
+        'InvalidUrlError',
         true
       );
     }
@@ -147,6 +166,7 @@ const validateEventData = (eventData) => {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         'Valor deve ser um número positivo',
+        'InvalidValueError',
         true
       );
     }
@@ -311,38 +331,80 @@ const processEvent = async (eventData, domainOrPixelId) => {
   const startTime = Date.now();
   try {
     logger.info('Iniciando processamento de novo evento');
-    logger.info('Dados recebidos:', JSON.stringify(eventData, null, 2));
+    logger.debug('Dados recebidos:', JSON.stringify(eventData, null, 2));
+
+    // Garantir que eventData é um objeto
+    if (!eventData || typeof eventData !== 'object') {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Dados do evento inválidos',
+        'InvalidEventDataError',
+        true
+      );
+    }
 
     // Validar dados do evento
     validateEventData(eventData);
 
     // Obter configuração do pixel
     const pixelConfig = await getPixelConfig(eventData, domainOrPixelId);
-    logger.info('Configuração do pixel obtida:', pixelConfig);
+    logger.info('Configuração do pixel obtida:', JSON.stringify(pixelConfig, null, 2));
 
-    // Preparar dados do evento
+    // Extrair campos principais com fallback para valores padrão
+    const eventName = eventData.event_name;
+    const eventTime = eventData.event_time || Math.floor(Date.now() / 1000);
+    
+    // Preparar dados do evento com valores padrão onde necessário
     const eventToSave = {
       pixelId: pixelConfig.pixelId,
-      eventName: eventData.event_name,
-      eventTime: eventData.event_time || Math.floor(Date.now() / 1000),
+      eventName: eventName,
+      eventTime: eventTime,
       userData: {
-        email: eventData.user_data?.email,
-        phone: eventData.user_data?.phone,
-        firstName: eventData.user_data?.first_name,
-        lastName: eventData.user_data?.last_name,
-        externalId: eventData.user_data?.external_id,
-        ip: eventData.user_data?.ip_address,
-        userAgent: eventData.user_data?.user_agent,
-        city: eventData.user_data?.city,
-        state: eventData.user_data?.state,
-        country: eventData.user_data?.country,
-        zipCode: eventData.user_data?.zip_code,
+        email: eventData.user_data?.email || '',
+        phone: eventData.user_data?.phone || '',
+        firstName: eventData.user_data?.first_name || '',
+        lastName: eventData.user_data?.last_name || '',
+        externalId: eventData.user_data?.external_id || '',
+        ip: eventData.user_data?.ip_address || '',
+        userAgent: eventData.user_data?.client_user_agent || eventData.client_user_agent || '',
+        city: eventData.user_data?.city || '',
+        state: eventData.user_data?.state || '',
+        country: eventData.user_data?.country || '',
+        zipCode: eventData.user_data?.zip_code || '',
+        fbp: eventData.user_data?.fbp || eventData.fbp || '',
       },
       customData: eventData.custom_data || {},
+      status: 'pending', // Inicialmente pendente
     };
 
+    // Adicionar campos de rastreamento
+    eventToSave.sourceUrl = eventData.event_source_url || '';
+    eventToSave.referrer = eventData.referrer || '';
+    eventToSave.domain = domainOrPixelId || '';
+    eventToSave.language = eventData.language || '';
+    eventToSave.appName = eventData.app || '';
+
+    logger.debug('Evento preparado para salvar:', JSON.stringify(eventToSave, null, 2));
+
     // Salvar evento no banco de dados
-    const savedEvent = await createEvent(eventToSave);
+    const savedEvent = await prisma.event.create({
+      data: {
+        id: uuidv4(),
+        pixelId: eventToSave.pixelId,
+        eventName: eventToSave.eventName,
+        eventTime: eventToSave.eventTime,
+        userData: eventToSave.userData,
+        customData: eventToSave.customData,
+        status: eventToSave.status,
+        sourceUrl: eventToSave.sourceUrl,
+        referrer: eventToSave.referrer,
+        domain: eventToSave.domain,
+        language: eventToSave.language,
+        appName: eventToSave.appName,
+      },
+    });
+
+    logger.info(`Evento salvo com sucesso, ID: ${savedEvent.id}`);
 
     try {
       // Enviar evento para o Facebook
@@ -352,8 +414,11 @@ const processEvent = async (eventData, domainOrPixelId) => {
         userData: savedEvent.userData,
         customData: savedEvent.customData,
         eventId: savedEvent.id,
-        eventSourceUrl: eventData.event_source_url,
+        eventSourceUrl: eventToSave.sourceUrl,
+        fbp: eventToSave.userData.fbp,
       };
+
+      logger.debug('Dados a serem enviados para o Facebook:', JSON.stringify(fbDataToSend, null, 2));
 
       const fbResponse = await facebookService.sendEvent(
         pixelConfig.pixelId,
@@ -368,7 +433,7 @@ const processEvent = async (eventData, domainOrPixelId) => {
         data: {
           status: 'sent',
           responseData: fbResponse,
-          fbEventId: fbResponse.events_received?.[0]?.id
+          fbEventId: fbResponse.events_received?.[0]?.id || null
         }
       });
 
@@ -378,15 +443,24 @@ const processEvent = async (eventData, domainOrPixelId) => {
       return updatedEvent;
     } catch (error) {
       // Em caso de falha, atualizar o evento com o erro
+      logger.error(`Erro ao enviar evento para o Facebook: ${error.message}`);
+      
       const updatedEvent = await prisma.event.update({
         where: { id: savedEvent.id },
         data: {
           status: 'failed',
-          errorMessage: error.message || 'Erro desconhecido'
+          errorMessage: error.message || 'Erro desconhecido ao enviar para Facebook'
         }
       });
 
-      throw error;
+      // Propagar o erro como ApiError
+      throw new ApiError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        `Erro ao enviar evento para o Facebook: ${error.message}`,
+        'FacebookSendError',
+        true,
+        error.stack
+      );
     }
   } catch (error) {
     const processingTime = Date.now() - startTime;
@@ -401,6 +475,7 @@ const processEvent = async (eventData, domainOrPixelId) => {
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
       'Erro ao processar evento',
+      error.message || 'Erro desconhecido',
       true,
       error.stack
     );

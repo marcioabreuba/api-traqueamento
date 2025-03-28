@@ -14,21 +14,43 @@ const createEvent = catchAsync(async (req, res) => {
     logger.info('Recebendo novo evento');
     logger.debug(`Dados recebidos: ${JSON.stringify(req.body)}`);
 
+    // Verificar se o corpo da requisição está vazio
+    if (!req.body || Object.keys(req.body).length === 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Corpo da requisição vazio ou inválido',
+        'EmptyRequestBodyError'
+      );
+    }
+
     // Validar dados do evento
     try {
       // Validação corrigida: Certifique-se de que o schema permite o campo "app"
-      const { error } = eventValidation.createEvent.body.validate(req.body, { allowUnknown: false });
+      const { error } = eventValidation.createEvent.body.validate(req.body, { 
+        allowUnknown: false,
+        abortEarly: false // Retorna todos os erros ao invés de apenas o primeiro
+      });
+      
       if (error) {
-        logger.error(`Erro na validação dos dados: ${error.details.map((x) => x.message).join(', ')}`);
+        const errorDetails = error.details.map((x) => x.message).join(', ');
+        logger.error(`Erro na validação dos dados: ${errorDetails}`);
         throw new ApiError(
-          httpStatus.BAD_REQUEST, // Status code primeiro
-          `Erro de validação: ${error.details.map((x) => x.message).join(', ')}`, // Message depois
-          error.details, // Adicionando detalhes do erro
+          httpStatus.BAD_REQUEST, 
+          `Erro de validação: ${errorDetails}`, 
+          error.details
         );
       }
     } catch (error) {
       logger.error(`Erro na validação dos dados: ${error.message}`);
-      throw error; // Já é uma ApiError, apenas propague
+      // Se não for uma ApiError, converte para uma
+      if (!(error instanceof ApiError)) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Erro de validação: ${error.message}`,
+          error.details || 'Erro na validação de dados'
+        );
+      }
+      throw error; // Se já for uma ApiError, apenas propague
     }
 
     // Extrair domínio do header ou do payload
@@ -44,26 +66,36 @@ const createEvent = catchAsync(async (req, res) => {
     });
   } catch (error) {
     logger.error('Erro ao processar evento:', error);
-    logger.error(`Status code do erro: ${error.statusCode}`);
+    if (error.statusCode) {
+      logger.error(`Status code do erro: ${error.statusCode}`);
+    }
     logger.error(`É instância de ApiError? ${error instanceof ApiError}`);
 
     // Tratamento específico para erros de validação
-    if (error.message.includes('validação') || error.message.includes('validation')) {
+    if (error.message && (error.message.includes('validação') || error.message.includes('validation'))) {
       return res.status(httpStatus.BAD_REQUEST).json({
         success: false,
         error: error.message,
         details: error.details || 'Erro na validação dos dados',
-        code: httpStatus.BAD_REQUEST,
+        code: httpStatus.BAD_REQUEST
       });
     }
 
     // Tratamento de erros ApiError
     if (error instanceof ApiError) {
-      return res.status(error.statusCode || httpStatus.INTERNAL_SERVER_ERROR).json({
+      // Garante que o status code será um valor válido
+      const statusCode = error.statusCode && 
+                         Number.isInteger(error.statusCode) && 
+                         error.statusCode >= 100 && 
+                         error.statusCode <= 599 
+                         ? error.statusCode 
+                         : httpStatus.INTERNAL_SERVER_ERROR;
+      
+      return res.status(statusCode).json({
         success: false,
-        error: error.message,
+        error: error.message || 'Erro interno',
         details: error.details || 'Erro interno',
-        code: error.statusCode || httpStatus.INTERNAL_SERVER_ERROR,
+        code: statusCode
       });
     }
 
@@ -72,7 +104,7 @@ const createEvent = catchAsync(async (req, res) => {
       success: false,
       error: 'Erro interno do servidor ao processar evento',
       details: error.message || 'Erro desconhecido',
-      code: httpStatus.INTERNAL_SERVER_ERROR,
+      code: httpStatus.INTERNAL_SERVER_ERROR
     });
   }
 });
