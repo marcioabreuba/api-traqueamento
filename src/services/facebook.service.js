@@ -95,42 +95,47 @@ const formatEventData = (data) => {
     client_user_agent: userData.userAgent || null,
   };
 
-  // Adicionar campos condicionalmente se existirem
-  if (userData.email) {
+  // Adicionar campos condicionalmente se existirem e não forem vazios
+  if (userData.email && userData.email.trim() !== '') {
     formattedUserData.em = [userData.email];
     logger.debug('Email adicionado aos dados do usuário');
   }
-  if (userData.phone) {
+  if (userData.phone && userData.phone.trim() !== '') {
     formattedUserData.ph = [userData.phone];
     logger.debug('Telefone adicionado aos dados do usuário');
   }
-  if (userData.firstName) {
+  if (userData.firstName && userData.firstName.trim() !== '') {
     formattedUserData.fn = [userData.firstName];
     logger.debug('Nome adicionado aos dados do usuário');
   }
-  if (userData.lastName) {
+  if (userData.lastName && userData.lastName.trim() !== '') {
     formattedUserData.ln = [userData.lastName];
     logger.debug('Sobrenome adicionado aos dados do usuário');
   }
-  if (userData.externalId) {
+  if (userData.externalId && userData.externalId.trim() !== '') {
     formattedUserData.external_id = [userData.externalId];
     logger.debug('ID externo adicionado aos dados do usuário');
   }
-  if (userData.city) {
+  if (userData.city && userData.city.trim() !== '') {
     formattedUserData.ct = [userData.city];
     logger.debug(`Cidade adicionada aos dados do usuário: ${userData.city}`);
   }
-  if (userData.state) {
+  if (userData.state && userData.state.trim() !== '') {
     formattedUserData.st = [userData.state];
     logger.debug(`Estado adicionado aos dados do usuário: ${userData.state}`);
   }
-  if (userData.zipCode) {
+  if (userData.zipCode && userData.zipCode.trim() !== '') {
     formattedUserData.zp = [userData.zipCode];
     logger.debug(`CEP adicionado aos dados do usuário: ${userData.zipCode}`);
   }
-  if (userData.country) {
+  if (userData.country && userData.country.trim() !== '') {
     formattedUserData.country = [userData.country];
     logger.debug(`País adicionado aos dados do usuário: ${userData.country}`);
+  }
+  // Adicionar o FBP se existir
+  if (userData.fbp && userData.fbp.trim() !== '') {
+    formattedUserData.fbp = userData.fbp;
+    logger.debug(`FBP adicionado aos dados do usuário: ${userData.fbp}`);
   }
 
   // Construir evento
@@ -141,7 +146,6 @@ const formatEventData = (data) => {
     custom_data: customData,
     event_id: eventId,
     action_source: 'website', // Adicionado para indicar que é server-side
-    pixelId // Adicionando pixelId ao evento
   };
 
   // Adicionar URL de origem, se fornecida
@@ -221,6 +225,10 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
         access_token: accessToken
       };
 
+      // Log do payload completo para depuração
+      logger.debug('Payload completo enviado para a API do Facebook:', 
+        JSON.stringify(payload, null, 2));
+
       // Enviar evento para o Facebook
       const response = await axios.post(
         `${config.facebook.apiUrl}/${pixelId}/events`,
@@ -236,6 +244,21 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
       }
     } catch (error) {
       lastError = error;
+      
+      // Log detalhado do erro
+      if (error.response) {
+        // O servidor respondeu com um status fora do intervalo 2xx
+        logger.error(`Erro de resposta do Facebook: Status ${error.response.status}`);
+        logger.error('Dados de erro:', error.response.data);
+        logger.error('Headers:', error.response.headers);
+      } else if (error.request) {
+        // A requisição foi feita mas não houve resposta
+        logger.error('Sem resposta do Facebook:', error.request);
+      } else {
+        // Algo aconteceu ao configurar a requisição
+        logger.error('Erro ao configurar requisição:', error.message);
+      }
+      
       logger.error(`Erro na tentativa ${attempt} de ${MAX_RETRIES}:`, error.message);
 
       // Se for o último retry, propaga o erro
