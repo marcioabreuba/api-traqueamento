@@ -18,7 +18,8 @@ const createEvent = async (eventData, clientIp) => {
     // Adicionar pixelId aos dados do evento
     const eventWithPixel = {
       ...eventData,
-      pixelId: config.facebook.pixelId // Adiciona o pixelId do config
+      pixelId: config.facebook.pixelId, // Adiciona o pixelId do config
+      eventName: eventData.event_name // Garante que o eventName seja passado corretamente
     };
 
     // Criar evento no banco de dados
@@ -31,14 +32,14 @@ const createEvent = async (eventData, clientIp) => {
       config.facebook.pixelId,
       config.facebook.accessToken,
       {
-        eventName: event.event_name,
-        eventTime: event.event_time,
-        eventSourceUrl: event.event_source_url,
+        eventName: event.eventName,
+        eventTime: event.eventTime,
+        eventSourceUrl: event.eventSourceUrl,
         userData: {
-          ...event.user_data,
+          ...event.userData,
           ip: clientIp
         },
-        customData: event.custom_data,
+        customData: event.customData,
         value: event.value,
         currency: event.currency
       },

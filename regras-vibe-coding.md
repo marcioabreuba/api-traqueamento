@@ -170,3 +170,6 @@
   - Implemente gerenciamento adequado de sessão
   - Use hash seguro de senha
   - Imponha políticas de senha forte
+
+  - **Dupla checagem**
+  - Implemente as melhorias ou correções e ao final faça uma checagem completa para verificar se algo saiu errado
