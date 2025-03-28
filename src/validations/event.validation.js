@@ -38,9 +38,24 @@ const eventValidation = {
       'Lead',
       'CompleteRegistration',
       'Subscribe'
-    ).required(),
-    event_time: Joi.number().required(),
-    domain: Joi.string().required(),
+    ).required().messages({
+      'any.required': 'O nome do evento é obrigatório',
+      'string.empty': 'O nome do evento não pode estar vazio',
+      'any.only': 'O nome do evento deve ser um dos valores permitidos'
+    }),
+    pixel_id: Joi.string().pattern(/^\d+$/).required().messages({
+      'any.required': 'O ID do pixel é obrigatório',
+      'string.empty': 'O ID do pixel não pode estar vazio',
+      'string.pattern.base': 'O ID do pixel deve conter apenas números'
+    }),
+    event_time: Joi.number().required().messages({
+      'any.required': 'O timestamp do evento é obrigatório',
+      'number.base': 'O timestamp do evento deve ser um número'
+    }),
+    domain: Joi.string().required().messages({
+      'any.required': 'O domínio é obrigatório',
+      'string.empty': 'O domínio não pode estar vazio'
+    }),
     user_data: Joi.object().keys({
       em: Joi.array().items(Joi.string().email()),
       ph: Joi.array().items(Joi.string()),

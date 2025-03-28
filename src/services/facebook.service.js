@@ -156,10 +156,13 @@ const formatEventData = (data) => {
 
 /**
  * Enviar evento para a Conversions API do Facebook com retry
+ * @param {string} pixelId - ID do pixel
+ * @param {string} accessToken - Access Token do Facebook
  * @param {Object} eventData - Dados do evento
+ * @param {string} testCode - Código do teste
  * @returns {Promise<void>}
  */
-const sendEvent = async (eventData) => {
+const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
   let lastError = null;
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -167,15 +170,26 @@ const sendEvent = async (eventData) => {
       logger.info(`Tentativa ${attempt} de ${MAX_RETRIES} de envio do evento ${eventData.eventName}`);
       
       // Validar dados obrigatórios
-      if (!eventData.pixelId) {
+      if (!pixelId) {
+        logger.error('Pixel ID não fornecido');
         throw new ApiError(
           httpStatus.BAD_REQUEST,
-          'Pixel ID é obrigatório',
+          'Pixel ID é obrigatório para envio ao Facebook',
+          true
+        );
+      }
+
+      if (!accessToken) {
+        logger.error('Access Token não fornecido');
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          'Access Token é obrigatório para envio ao Facebook',
           true
         );
       }
 
       if (!eventData.eventName) {
+        logger.error('Nome do evento não fornecido');
         throw new ApiError(
           httpStatus.BAD_REQUEST,
           'Nome do evento é obrigatório',
@@ -187,64 +201,60 @@ const sendEvent = async (eventData) => {
         eventData.eventTime = Math.floor(Date.now() / 1000);
       }
 
-      logger.info(`Iniciando envio de evento para pixel ${eventData.pixelId}`);
+      logger.info(`Iniciando envio de evento para pixel ${pixelId}`);
       
       // Log detalhado do evento
-      logEventDetails(eventData.pixelId, eventData, config.facebook.testEventCode);
+      logEventDetails(pixelId, eventData, testCode);
 
       // Formatar dados do evento
-      const formattedEvent = formatEventData(eventData);
+      const formattedEvent = formatEventData({
+        ...eventData,
+        pixelId
+      });
       logger.info(`Formatando evento: ${eventData.eventName} (ID: ${formattedEvent.event_id})`);
       logger.info('Dados do evento formatados com sucesso');
 
       // Preparar payload para a API do Facebook
       const payload = {
         data: [formattedEvent],
-        test_event_code: config.facebook.testEventCode,
-        access_token: config.facebook.accessToken
+        test_event_code: testCode,
+        access_token: accessToken
       };
 
       // Enviar evento para o Facebook
-      logger.info(`Enviando evento ${eventData.eventName} para o Facebook`);
       const response = await axios.post(
-        `https://graph.facebook.com/v18.0/${eventData.pixelId}/events`,
-        payload,
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
+        `${config.facebook.apiUrl}/${pixelId}/events`,
+        payload
       );
 
-      if (response.data.events_received === 1) {
-        logger.info('Evento enviado com sucesso para o Facebook');
-        return;
+      // Verificar resposta
+      if (response.data && response.data.events_received) {
+        logger.info(`Evento enviado com sucesso para o Facebook (ID: ${formattedEvent.event_id})`);
+        return response.data;
       } else {
-        throw new Error('Evento não foi recebido pelo Facebook');
+        throw new Error('Resposta inválida do Facebook');
       }
     } catch (error) {
       lastError = error;
-      logger.error(`Tentativa ${attempt} falhou:`, error.message);
-      
-      if (attempt < MAX_RETRIES) {
-        const delay = RETRY_DELAY * attempt; // Backoff exponencial
-        logger.info(`Aguardando ${delay}ms antes da próxima tentativa...`);
-        await sleep(delay);
+      logger.error(`Erro na tentativa ${attempt} de ${MAX_RETRIES}:`, error.message);
+
+      // Se for o último retry, propaga o erro
+      if (attempt === MAX_RETRIES) {
+        throw new ApiError(
+          httpStatus.BAD_GATEWAY,
+          `Erro ao enviar evento para o Facebook após ${MAX_RETRIES} tentativas: ${error.message}`,
+          true
+        );
       }
+
+      // Aguardar antes de tentar novamente
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * attempt));
     }
   }
-
-  // Se chegou aqui, todas as tentativas falharam
-  logger.error('Todas as tentativas de envio falharam:', lastError);
-  throw new ApiError(
-    httpStatus.INTERNAL_SERVER_ERROR,
-    'Falha ao enviar evento para o Facebook após várias tentativas',
-    true,
-    lastError.stack
-  );
 };
 
 module.exports = {
   formatEventData,
   sendEvent,
+  logEventDetails
 }; 

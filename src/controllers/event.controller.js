@@ -5,77 +5,26 @@ const ApiError = require('../utils/ApiError');
 const pick = require('../utils/pick');
 const logger = require('../config/logger');
 const { validateEventData, validateUserData, normalizeLocation } = require('../utils/validators');
+const eventValidation = require('../validations/event.validation');
 
 /**
  * Criar novo evento
  */
 const createEvent = catchAsync(async (req, res) => {
   try {
-    logger.info('Iniciando processamento de novo evento');
-    logger.info('Headers recebidos:', JSON.stringify(req.headers, null, 2));
-    logger.info('Body recebido:', JSON.stringify(req.body, null, 2));
-    logger.info('Query params:', JSON.stringify(req.query, null, 2));
-    
-    // Extrair IP do cliente
-    const clientIp = req.ip || req.connection.remoteAddress;
-    logger.info(`IP do cliente extraído: ${clientIp}`);
+    logger.info('Recebendo novo evento');
+    logger.debug(`Dados recebidos: ${JSON.stringify(req.body)}`);
 
-    // Validar e normalizar dados do evento
+    // Validar dados do evento
     try {
-      const eventData = validateEventData(req.body);
-      if (!eventData) {
-        throw new ApiError(httpStatus.BAD_REQUEST, 'Dados do evento inválidos');
+      const { error } = eventValidation.body.validate(req.body);
+      if (error) {
+        logger.error('Erro na validação dos dados:', error);
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          error.details.map(x => x.message).join(', ')
+        );
       }
-
-      // Validar e normalizar dados do usuário
-      if (eventData.user_data) {
-        eventData.user_data = validateUserData(eventData.user_data);
-        if (!eventData.user_data) {
-          throw new ApiError(httpStatus.BAD_REQUEST, 'Dados do usuário inválidos');
-        }
-      }
-
-      // Tentar enriquecer com informações de geolocalização
-      try {
-        logger.debug('Iniciando busca de dados GeoIP');
-        const geoData = await geoipService.lookupIp(clientIp);
-        
-        if (geoData) {
-          const normalizedLocation = normalizeLocation(geoData);
-          if (normalizedLocation) {
-            eventData.user_data = {
-              ...eventData.user_data,
-              ...normalizedLocation
-            };
-            logger.info('Dados de geolocalização enriquecidos com sucesso');
-          }
-        }
-      } catch (error) {
-        logger.error(`Erro ao obter dados de geolocalização: ${error.message}`);
-        logger.error(`Stack trace: ${error.stack}`);
-      }
-
-      // Extrair user-agent se não fornecido
-      if (!eventData.user_data?.user_agent && req.headers['user-agent']) {
-        eventData.user_data = eventData.user_data || {};
-        eventData.user_data.user_agent = req.headers['user-agent'];
-        logger.debug('User-Agent extraído dos headers');
-      }
-
-      // Adicionar URL de origem se disponível
-      if (req.headers.referer) {
-        eventData.event_source_url = req.headers.referer;
-        logger.debug(`URL de origem adicionada: ${req.headers.referer}`);
-      }
-
-      // Processar o evento
-      const event = await eventService.createEvent(eventData, clientIp);
-      
-      // Enviar resposta de sucesso
-      res.status(httpStatus.CREATED).json({
-        success: true,
-        data: event
-      });
     } catch (error) {
       logger.error('Erro na validação dos dados:', error);
       if (error instanceof ApiError) {
@@ -86,17 +35,60 @@ const createEvent = catchAsync(async (req, res) => {
         error.message || 'Erro na validação dos dados'
       );
     }
+
+    // Extrair domínio do header ou do payload
+    const domain = req.headers['x-domain'] || req.body.domain;
+    logger.info(`Domínio extraído: ${domain || 'não fornecido'}`);
+
+    // Processar evento
+    const event = await eventService.processEvent(req.body, domain);
+    
+    return res.status(httpStatus.CREATED).json({
+      success: true,
+      data: event
+    });
   } catch (error) {
     logger.error('Erro ao processar evento:', error);
-    if (error instanceof ApiError) {
-      throw error;
+    
+    // Tratamento específico para erros de pixel_id
+    if (error.message.includes('pixel_id') || error.message.includes('Pixel ID')) {
+      return res.status(httpStatus.BAD_REQUEST).json({
+        success: false,
+        error: 'Erro na configuração do pixel. Verifique se o pixel_id está presente no payload ou se existe uma configuração válida para o domínio.',
+        details: error.message
+      });
     }
-    throw new ApiError(
-      httpStatus.INTERNAL_SERVER_ERROR,
-      error.message || 'Erro ao processar evento',
-      false,
-      error.stack
-    );
+
+    // Tratamento específico para erros de validação
+    if (error.message.includes('validação') || error.message.includes('validation')) {
+      return res.status(httpStatus.BAD_REQUEST).json({
+        success: false,
+        error: 'Erro na validação dos dados',
+        details: error.message
+      });
+    }
+
+    // Tratamento específico para erros do Facebook
+    if (error.message.includes('Facebook') || error.message.includes('facebook')) {
+      return res.status(httpStatus.BAD_GATEWAY).json({
+        success: false,
+        error: 'Erro ao enviar evento para o Facebook',
+        details: error.message
+      });
+    }
+
+    if (error instanceof ApiError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: error.message
+      });
+    }
+
+    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: 'Erro interno do servidor ao processar evento',
+      details: error.message
+    });
   }
 });
 

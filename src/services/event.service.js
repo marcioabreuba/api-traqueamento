@@ -10,6 +10,71 @@ const geoipService = require('./geoip.service');
 const prisma = new PrismaClient();
 
 /**
+ * Obtém a configuração do pixel baseado na hierarquia de prioridade
+ * @param {Object} eventData - Dados do evento
+ * @param {string} domain - Domínio da requisição
+ * @returns {Promise<Object>} Configuração do pixel
+ */
+const getPixelConfig = async (eventData, domain) => {
+  logger.info('Iniciando busca de configuração do pixel');
+  logger.debug('Dados recebidos:', { eventData, domain });
+
+  // 1. Usar pixel_id do payload se fornecido
+  if (eventData.pixel_id) {
+    logger.info(`Usando pixel_id do payload: ${eventData.pixel_id}`);
+    return {
+      pixelId: eventData.pixel_id,
+      accessToken: config.facebook.accessToken,
+      testCode: config.facebook.testCode
+    };
+  }
+
+  // 2. Buscar configuração específica do domínio
+  if (domain) {
+    try {
+      const pixelConfig = await prisma.pixelConfig.findFirst({
+        where: {
+          OR: [
+            { domain },
+            { pixelId: domain }
+          ],
+          isActive: true
+        }
+      });
+
+      if (pixelConfig) {
+        logger.info(`Usando configuração específica para domínio: ${domain}`);
+        return {
+          pixelId: pixelConfig.pixelId,
+          accessToken: pixelConfig.accessToken,
+          testCode: pixelConfig.testCode
+        };
+      } else {
+        logger.info(`Nenhuma configuração específica encontrada para domínio: ${domain}`);
+      }
+    } catch (error) {
+      logger.error(`Erro ao buscar configuração do domínio: ${error.message}`);
+    }
+  }
+
+  // 3. Usar configuração global
+  if (config.facebook.pixelId) {
+    logger.info('Usando configuração global do pixel');
+    return {
+      pixelId: config.facebook.pixelId,
+      accessToken: config.facebook.accessToken,
+      testCode: config.facebook.testCode
+    };
+  }
+
+  logger.error('Nenhuma configuração de pixel encontrada');
+  throw new ApiError(
+    httpStatus.BAD_REQUEST,
+    'Configuração de pixel não encontrada. Verifique se o pixel_id está presente no payload ou se existe uma configuração válida para o domínio.'
+  );
+};
+
+/**
  * Validar dados do evento
  * @param {Object} eventData
  * @throws {ApiError}
@@ -18,7 +83,7 @@ const validateEventData = (eventData) => {
   logger.info('Iniciando validação dos dados do evento');
   
   // Validar campos obrigatórios
-  const requiredFields = ['eventName', 'pixelId'];
+  const requiredFields = ['event_name'];
   const missingFields = requiredFields.filter(field => !eventData[field]);
   
   if (missingFields.length > 0) {
@@ -30,21 +95,26 @@ const validateEventData = (eventData) => {
     );
   }
 
-  // Validar formato do pixelId
-  if (!/^\d+$/.test(eventData.pixelId)) {
-    logger.error(`Pixel ID inválido: ${eventData.pixelId}`);
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      'Pixel ID deve conter apenas números',
-      true
-    );
+  // Validar pixel_id se fornecido
+  if (eventData.pixel_id) {
+    if (!/^\d+$/.test(eventData.pixel_id)) {
+      logger.error(`Pixel ID inválido: ${eventData.pixel_id}`);
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Pixel ID deve conter apenas números',
+        true
+      );
+    }
+    logger.info(`Pixel ID válido fornecido: ${eventData.pixel_id}`);
+  } else {
+    logger.info('Pixel ID não fornecido, será buscado na configuração');
   }
 
   // Validar eventTime
-  if (eventData.eventTime) {
-    const eventTime = parseInt(eventData.eventTime);
+  if (eventData.event_time) {
+    const eventTime = parseInt(eventData.event_time);
     if (isNaN(eventTime) || eventTime < 0) {
-      logger.error(`Event time inválido: ${eventData.eventTime}`);
+      logger.error(`Event time inválido: ${eventData.event_time}`);
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         'Event time deve ser um timestamp válido',
@@ -54,11 +124,11 @@ const validateEventData = (eventData) => {
   }
 
   // Validar URL
-  if (eventData.sourceUrl) {
+  if (eventData.event_source_url) {
     try {
-      new URL(eventData.sourceUrl);
+      new URL(eventData.event_source_url);
     } catch (error) {
-      logger.error(`URL inválida: ${eventData.sourceUrl}`);
+      logger.error(`URL inválida: ${eventData.event_source_url}`);
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         'URL de origem inválida',
@@ -68,10 +138,10 @@ const validateEventData = (eventData) => {
   }
 
   // Validar dados de valor
-  if (eventData.value !== undefined) {
-    const value = parseFloat(eventData.value);
+  if (eventData.custom_data?.value !== undefined) {
+    const value = parseFloat(eventData.custom_data.value);
     if (isNaN(value) || value < 0) {
-      logger.error(`Valor inválido: ${eventData.value}`);
+      logger.error(`Valor inválido: ${eventData.custom_data.value}`);
       throw new ApiError(
         httpStatus.BAD_REQUEST,
         'Valor deve ser um número positivo',
@@ -236,99 +306,102 @@ const queryEvents = async (filter, options) => {
  * @returns {Promise<Event>}
  */
 const processEvent = async (eventData, domainOrPixelId) => {
-  // Configuração global padrão
-  let pixelId = config.facebook.pixelId;
-  let accessToken = config.facebook.accessToken;
-  let testCode = config.facebook.testCode;
-
-  // Verificar se existe uma configuração específica
+  const startTime = Date.now();
   try {
-    const pixelConfig = await prisma.pixelConfig.findFirst({
-      where: {
-        OR: [
-          { domain: domainOrPixelId },
-          { pixelId: domainOrPixelId }
-        ],
-        isActive: true
-      }
-    });
+    logger.info('Iniciando processamento de novo evento');
+    logger.info('Dados recebidos:', JSON.stringify(eventData, null, 2));
 
-    if (pixelConfig) {
-      pixelId = pixelConfig.pixelId;
-      accessToken = pixelConfig.accessToken;
-      testCode = pixelConfig.testCode;
-      logger.info(`Usando configuração específica para: ${domainOrPixelId}`);
-    } else {
-      logger.info(`Configuração não encontrada para ${domainOrPixelId}, usando configuração global`);
-    }
-  } catch (error) {
-    logger.error(`Erro ao buscar configuração: ${error.message}`);
-  }
+    // Validar dados do evento
+    validateEventData(eventData);
 
-  // Verificar se temos ID do pixel e token de acesso
-  if (!pixelId || !accessToken) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Configuração de pixel não encontrada');
-  }
+    // Obter configuração do pixel
+    const pixelConfig = await getPixelConfig(eventData, domainOrPixelId);
+    logger.info('Configuração do pixel obtida:', pixelConfig);
 
-  // Preparar dados do evento
-  const eventToSave = {
-    pixelId,
-    eventName: eventData.event_name,
-    eventTime: eventData.event_time || Math.floor(Date.now() / 1000),
-    userData: {
-      email: eventData.user_data?.email,
-      phone: eventData.user_data?.phone,
-      firstName: eventData.user_data?.first_name,
-      lastName: eventData.user_data?.last_name,
-      externalId: eventData.user_data?.external_id,
-      ip: eventData.user_data?.ip_address,
-      userAgent: eventData.user_data?.user_agent,
-      city: eventData.user_data?.city,
-      state: eventData.user_data?.state,
-      country: eventData.user_data?.country,
-      zipCode: eventData.user_data?.zip_code,
-    },
-    customData: eventData.custom_data || {},
-  };
-
-  // Salvar evento no banco de dados
-  const savedEvent = await createEvent(eventToSave);
-
-  try {
-    // Enviar evento para o Facebook
-    const fbDataToSend = {
-      eventName: savedEvent.eventName,
-      eventTime: savedEvent.eventTime,
-      userData: savedEvent.userData,
-      customData: savedEvent.customData,
-      eventId: savedEvent.id,
-      eventSourceUrl: eventData.event_source_url,
+    // Preparar dados do evento
+    const eventToSave = {
+      pixelId: pixelConfig.pixelId,
+      eventName: eventData.event_name,
+      eventTime: eventData.event_time || Math.floor(Date.now() / 1000),
+      userData: {
+        email: eventData.user_data?.email,
+        phone: eventData.user_data?.phone,
+        firstName: eventData.user_data?.first_name,
+        lastName: eventData.user_data?.last_name,
+        externalId: eventData.user_data?.external_id,
+        ip: eventData.user_data?.ip_address,
+        userAgent: eventData.user_data?.user_agent,
+        city: eventData.user_data?.city,
+        state: eventData.user_data?.state,
+        country: eventData.user_data?.country,
+        zipCode: eventData.user_data?.zip_code,
+      },
+      customData: eventData.custom_data || {},
     };
 
-    const fbResponse = await facebookService.sendEvent(pixelId, accessToken, fbDataToSend, testCode);
+    // Salvar evento no banco de dados
+    const savedEvent = await createEvent(eventToSave);
 
-    // Atualizar evento com resposta do Facebook
-    const updatedEvent = await prisma.event.update({
-      where: { id: savedEvent.id },
-      data: {
-        status: 'sent',
-        responseData: fbResponse,
-        fbEventId: fbResponse.events_received?.[0]?.id
-      }
-    });
+    try {
+      // Enviar evento para o Facebook
+      const fbDataToSend = {
+        eventName: savedEvent.eventName,
+        eventTime: savedEvent.eventTime,
+        userData: savedEvent.userData,
+        customData: savedEvent.customData,
+        eventId: savedEvent.id,
+        eventSourceUrl: eventData.event_source_url,
+      };
 
-    return updatedEvent;
+      const fbResponse = await facebookService.sendEvent(
+        pixelConfig.pixelId,
+        pixelConfig.accessToken,
+        fbDataToSend,
+        pixelConfig.testCode
+      );
+
+      // Atualizar evento com resposta do Facebook
+      const updatedEvent = await prisma.event.update({
+        where: { id: savedEvent.id },
+        data: {
+          status: 'sent',
+          responseData: fbResponse,
+          fbEventId: fbResponse.events_received?.[0]?.id
+        }
+      });
+
+      const processingTime = Date.now() - startTime;
+      logger.info(`Processamento do evento concluído em ${processingTime}ms`);
+
+      return updatedEvent;
+    } catch (error) {
+      // Em caso de falha, atualizar o evento com o erro
+      const updatedEvent = await prisma.event.update({
+        where: { id: savedEvent.id },
+        data: {
+          status: 'failed',
+          errorMessage: error.message || 'Erro desconhecido'
+        }
+      });
+
+      throw error;
+    }
   } catch (error) {
-    // Em caso de falha, atualizar o evento com o erro
-    const updatedEvent = await prisma.event.update({
-      where: { id: savedEvent.id },
-      data: {
-        status: 'failed',
-        errorMessage: error.message || 'Erro desconhecido'
-      }
-    });
+    const processingTime = Date.now() - startTime;
+    logger.error(`Erro ao processar evento após ${processingTime}ms:`, error);
+    
+    // Se for um ApiError, propaga o erro
+    if (error instanceof ApiError) {
+      throw error;
+    }
 
-    throw error;
+    // Caso contrário, cria um novo ApiError
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      'Erro ao processar evento',
+      true,
+      error.stack
+    );
   }
 };
 
