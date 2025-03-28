@@ -22,7 +22,7 @@ services:
       - key: LOG_LEVEL
         value: info
       - key: GEOIP_DB_PATH
-        value: /data/GeoLite2-City.mmdb
+        value: ./data/GeoLite2-City.mmdb
     healthCheckPath: /v1/health
     autoDeploy: true
     plan: free
