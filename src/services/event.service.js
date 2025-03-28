@@ -1,10 +1,12 @@
 const httpStatus = require('http-status');
 const { v4: uuidv4 } = require('uuid');
-const prisma = require('../client');
+const { PrismaClient } = require('@prisma/client');
 const ApiError = require('../utils/ApiError');
 const logger = require('../config/logger');
 const config = require('../config/config');
 const facebookService = require('./facebook.service');
+
+const prisma = new PrismaClient();
 
 /**
  * Criar novo evento
