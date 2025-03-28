@@ -249,57 +249,66 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
       // Enviar evento para o Facebook
       const response = await axios.post(apiUrl, payload);
 
-      // Verificar resposta
-      if (response && response.status) {
-        logger.debug(`Status da resposta Facebook: ${response.status}`);
-        
-        // Criar um objeto de resposta padronizado
-        let standardResponse = {
-          success: false,
-          status_code: response.status,
-          events_received: 0,
-          messages: []
+      // Verificar e garantir um status code válido usando 500 como fallback
+      // Dessa forma, não teremos mais o erro de "Invalid status code: undefined"
+      let statusCode;
+
+      // Verificar se o status code existe e é válido (entre 100-599)
+      if (response && typeof response.status === 'number' && response.status >= 100 && response.status < 600) {
+        statusCode = response.status;
+        logger.debug(`Status da resposta Facebook: ${statusCode}`);
+      } else {
+        // Status code inválido ou indefinido, usar 500 como fallback
+        const originalStatus = response && response.status;
+        statusCode = 500; // Internal Server Error como fallback
+        logger.error(`Status code não definido ou inválido: ${originalStatus}, usando ${statusCode} como fallback`);
+      }
+
+      // Criar um objeto de resposta padronizado
+      let standardResponse = {
+        success: false,
+        status_code: statusCode,
+        events_received: 0,
+        messages: [],
+      };
+
+      // Processar os dados da resposta, se disponíveis
+      if (response && response.data) {
+        logger.debug('Resposta da API Facebook:', JSON.stringify(response.data, null, 2));
+
+        standardResponse = {
+          ...standardResponse,
+          ...response.data,
+          success: true,
         };
-        
-        // Processar os dados da resposta, se disponíveis
-        if (response.data) {
-          logger.debug('Resposta da API Facebook:', JSON.stringify(response.data, null, 2));
-          
-          standardResponse = {
-            ...standardResponse,
-            ...response.data,
-            success: true
-          };
-          
-          if (response.data.events_received) {
-            logger.info(`Evento enviado com sucesso para o Facebook (ID: ${formattedEvent.event_id}). Eventos recebidos: ${response.data.events_received}`);
-            standardResponse.events_received = response.data.events_received;
-            standardResponse.messages.push(`${response.data.events_received} eventos recebidos`);
-            return standardResponse;
-          } else {
-            // Mesmo se não houver events_received, considerar sucesso se status 200
-            if (response.status >= 200 && response.status < 300) {
-              logger.info(`Evento enviado para o Facebook (ID: ${formattedEvent.event_id}). Status: ${response.status}`);
-              standardResponse.success = true;
-              standardResponse.messages.push(`Resposta recebida com status ${response.status}`);
-              return standardResponse;
-            }
-          }
-        }
-        
-        // Status OK mas sem dados esperados na resposta
-        if (response.status >= 200 && response.status < 300) {
-          logger.info(`Evento enviado com status ${response.status}, mas formato da resposta inesperado`);
-          standardResponse.success = true;
-          standardResponse.messages.push(`Resposta recebida com status ${response.status}`);
+
+        if (response.data.events_received) {
+          logger.info(
+            `Evento enviado com sucesso para o Facebook (ID: ${formattedEvent.event_id}). Eventos recebidos: ${response.data.events_received}`,
+          );
+          standardResponse.events_received = response.data.events_received;
+          standardResponse.messages.push(`${response.data.events_received} eventos recebidos`);
           return standardResponse;
         }
-        
-        standardResponse.messages.push(`Resposta inválida do Facebook: status ${response.status}`);
-        throw new Error(`Resposta inválida do Facebook: status ${response.status}`);
+        // Mesmo se não houver events_received, considerar sucesso se status 200
+        if (statusCode >= 200 && statusCode < 300) {
+          logger.info(`Evento enviado para o Facebook (ID: ${formattedEvent.event_id}). Status: ${statusCode}`);
+          standardResponse.success = true;
+          standardResponse.messages.push(`Resposta recebida com status ${statusCode}`);
+          return standardResponse;
+        }
       }
-      
-      throw new Error('Resposta indefinida do Facebook');
+
+      // Status OK mas sem dados esperados na resposta
+      if (statusCode >= 200 && statusCode < 300) {
+        logger.info(`Evento enviado com status ${statusCode}, mas formato da resposta inesperado`);
+        standardResponse.success = true;
+        standardResponse.messages.push(`Resposta recebida com status ${statusCode}`);
+        return standardResponse;
+      }
+
+      standardResponse.messages.push(`Resposta inválida do Facebook: status ${statusCode}`);
+      throw new Error(`Resposta inválida do Facebook: status ${statusCode}`);
     } catch (error) {
       // Adicionar detalhes mais específicos sobre o erro
       logger.error(`Tentativa ${attempt} falhou ao enviar evento para o Facebook:`, {
@@ -320,7 +329,14 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
         // Extrair detalhes do erro mais úteis
         if (error.response) {
           // Erro com resposta do servidor (erro HTTP)
-          statusCode = error.response.status || httpStatus.BAD_GATEWAY;
+          // Usar o status da resposta se for válido, caso contrário usar BAD_GATEWAY
+          if (typeof error.response.status === 'number' && error.response.status >= 100 && error.response.status < 600) {
+            statusCode = error.response.status;
+          } else {
+            statusCode = httpStatus.BAD_GATEWAY;
+            logger.error(`Status code inválido no erro: ${error.response.status}, usando ${statusCode}`);
+          }
+
           errorMessage = `Erro ${statusCode} do Facebook: ${JSON.stringify(error.response.data || {})}`;
           logger.error('Detalhes da resposta de erro:', {
             status: statusCode,
@@ -341,6 +357,11 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
             stack: error.stack,
           });
         }
+
+        // Verificar se é uma instância de ApiError para melhor diagnóstico
+        logger.error(`É instância de ApiError? ${error instanceof ApiError}`);
+        logger.error(`Erro detalhado [${error.statusCode || 'undefined'}]: ${error.message}`);
+        logger.error(`Erro detalhado [${statusCode}]: ${errorMessage}`);
 
         throw new ApiError(statusCode, errorMessage, 'FacebookApiError', true, error.stack);
       }
