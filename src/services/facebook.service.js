@@ -35,13 +35,15 @@ const logEventDetails = (pixelId, eventData, testEventCode) => {
     if (eventData.userData.country) logger.info(`🌎 Country: ${eventData.userData.country}`);
     if (eventData.userData.ip) logger.info(`🌐 IP: ${eventData.userData.ip}`);
     if (eventData.userData.userAgent) logger.info(`🌐 User Agent: ${eventData.userData.userAgent}`);
+    if (eventData.userData.fbp) logger.info(`🔍 FBP: ${eventData.userData.fbp}`);
+    if (eventData.userData.external_id) logger.info(`🆔 External ID: ${eventData.userData.external_id}`);
   }
 
   if (eventData.customData) {
     logger.info('\n🔧 CUSTOM DATA:');
     logger.info('-------------');
     Object.entries(eventData.customData).forEach(([key, value]) => {
-      logger.info(`📎 ${key}: ${value}`);
+      logger.info(`📎 ${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`);
     });
   }
 
@@ -55,7 +57,7 @@ const logEventDetails = (pixelId, eventData, testEventCode) => {
   logger.info('\n⚙️ CONFIGURATION:');
   logger.info('---------------');
   logger.info(`🔑 Test Event Code: ${testEventCode || 'Not configured'}`);
-  logger.info(`📡 API Version: v18.0`);
+  logger.info(`📡 API Version: ${config.facebook.apiVersion || 'v18.0'}`);
   logger.info('----------------------------------------\n');
 };
 
@@ -68,11 +70,6 @@ const formatEventData = (data) => {
   logger.debug('Iniciando formatação dos dados do evento');
 
   const { eventName, eventTime, userData = {}, customData = {}, eventSourceUrl, eventId = uuidv4() } = data;
-
-  // Log detalhado do evento
-  logEventDetails(data.pixelId, data, null);
-
-  logger.info(`Formatando evento: ${eventName} (ID: ${eventId})`);
 
   // Processar userData conforme especificação oficial do Facebook
   // https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/customer-information-parameters
@@ -124,13 +121,34 @@ const formatEventData = (data) => {
     logger.debug(`FBP adicionado aos dados do usuário: ${userData.fbp}`);
   }
 
+  // Processar customData para garantir que contém apenas os campos esperados pela API
+  const cleanedCustomData = {};
+
+  // Adicionar apenas campos válidos e não vazios ao customData
+  if (customData) {
+    Object.entries(customData).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        cleanedCustomData[key] = value;
+      }
+    });
+  }
+
+  // Garantir que currency e value são incluídos no customData se existirem no eventData
+  if (data.currency) {
+    cleanedCustomData.currency = data.currency;
+  }
+
+  if (data.value) {
+    cleanedCustomData.value = data.value;
+  }
+
   // Construir evento conforme especificação do Facebook Conversions API
   // https://developers.facebook.com/docs/marketing-api/conversions-api/parameters
   const event = {
     event_name: eventName,
     event_time: eventTime,
     user_data: formattedUserData,
-    custom_data: customData || {},
+    custom_data: cleanedCustomData,
     event_id: eventId,
     action_source: 'website', // Identifica a origem do evento como website
   };
@@ -141,7 +159,9 @@ const formatEventData = (data) => {
     logger.debug(`URL de origem adicionada: ${eventSourceUrl}`);
   }
 
-  logger.info('Dados do evento formatados com sucesso');
+  logger.info(`Evento formatado: ${eventName} (ID: ${eventId})`);
+  logger.debug('Evento formatado com sucesso:', JSON.stringify(event, null, 2));
+
   return event;
 };
 
@@ -151,7 +171,7 @@ const formatEventData = (data) => {
  * @param {string} accessToken - Access Token do Facebook
  * @param {Object} eventData - Dados do evento
  * @param {string} testCode - Código do teste
- * @returns {Promise<void>}
+ * @returns {Promise<Object>} - Resposta do Facebook
  */
 const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
   // Usar uma cópia local do eventData para evitar modificar o parâmetro original
@@ -193,18 +213,17 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
       // Definir eventTime se não existir, sem modificar o parâmetro original
       const finalEventData = {
         ...eventDataCopy,
+        pixelId, // Adicionar pixelId para formatação correta
         eventTime: eventDataCopy.eventTime || Math.floor(Date.now() / 1000),
       };
 
       logger.info(`Iniciando envio de evento para pixel ${pixelId}`);
 
-      // Log detalhado do evento
+      // Log detalhado do evento antes da formatação
       logEventDetails(pixelId, finalEventData, testCode);
 
       // Formatar dados do evento
       const formattedEvent = formatEventData(finalEventData);
-      logger.info(`Formatando evento: ${finalEventData.eventName} (ID: ${formattedEvent.event_id})`);
-      logger.info('Dados do evento formatados com sucesso');
 
       // Preparar payload conforme formato oficial do Facebook
       // https://developers.facebook.com/docs/marketing-api/conversions-api/using-the-api
@@ -216,25 +235,51 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
       // Adicionar test_event_code apenas se estiver definido
       if (testCode && testCode.trim() !== '') {
         payload.test_event_code = testCode;
+        logger.info(`Código de teste incluso: ${testCode}`);
       }
 
-      // Log do payload completo para depuração
-      logger.debug('Payload completo enviado para a API do Facebook:', JSON.stringify(payload, null, 2));
+      // Log do payload completo para depuração (ocultando o access_token para segurança)
+      const logPayload = { ...payload, access_token: '****' };
+      logger.debug('Payload enviado para a API do Facebook:', JSON.stringify(logPayload, null, 2));
 
       // Endereço e formato correto da API conforme documentação
-      const apiUrl = `${config.facebook.apiUrl}/${pixelId}/events`;
+      const apiVersion = config.facebook.apiVersion || 'v18.0';
+      const apiUrl = `${config.facebook.apiUrl}/${apiVersion}/${pixelId}/events`;
       logger.debug(`Enviando para URL: ${apiUrl}`);
 
       // Enviar evento para o Facebook
       const response = await axios.post(apiUrl, payload);
 
       // Verificar resposta
-      if (response.data && response.data.events_received) {
-        logger.info(`Evento enviado com sucesso para o Facebook (ID: ${formattedEvent.event_id})`);
-        logger.debug('Resposta completa do Facebook:', JSON.stringify(response.data, null, 2));
-        return response.data;
+      if (response && response.status) {
+        logger.debug(`Status da resposta Facebook: ${response.status}`);
+
+        if (response.data) {
+          logger.debug('Resposta da API Facebook:', JSON.stringify(response.data, null, 2));
+
+          if (response.data.events_received) {
+            logger.info(
+              `Evento enviado com sucesso para o Facebook (ID: ${formattedEvent.event_id}). Eventos recebidos: ${response.data.events_received}`,
+            );
+            return response.data;
+          }
+          // Mesmo se não houver events_received, considerar sucesso se status 200
+          if (response.status >= 200 && response.status < 300) {
+            logger.info(`Evento enviado para o Facebook (ID: ${formattedEvent.event_id}). Status: ${response.status}`);
+            return response.data;
+          }
+        }
+
+        // Status OK mas sem dados esperados na resposta
+        if (response.status >= 200 && response.status < 300) {
+          logger.info(`Evento enviado com status ${response.status}, mas formato da resposta inesperado`);
+          return { success: true, status: response.status };
+        }
+
+        throw new Error(`Resposta inválida do Facebook: status ${response.status}`);
       }
-      throw new Error(`Resposta inválida do Facebook: ${JSON.stringify(response.data || {})}`);
+
+      throw new Error('Resposta indefinida do Facebook');
     } catch (error) {
       // Adicionar detalhes mais específicos sobre o erro
       logger.error(`Tentativa ${attempt} falhou ao enviar evento para o Facebook:`, {
@@ -246,7 +291,7 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
       });
 
       // Se for a última tentativa, lançar erro
-      if (attempt === MAX_RETRIES) {
+      if (attempt >= MAX_RETRIES) {
         logger.error(`Todas as ${MAX_RETRIES} tentativas falharam para o evento ${eventDataCopy.eventName}`);
 
         let errorMessage = 'Falha ao enviar evento para o Facebook após múltiplas tentativas';
@@ -255,8 +300,8 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
         // Extrair detalhes do erro mais úteis
         if (error.response) {
           // Erro com resposta do servidor (erro HTTP)
-          statusCode = error.response.status;
-          errorMessage = `Erro ${statusCode} do Facebook: ${JSON.stringify(error.response.data)}`;
+          statusCode = error.response.status || httpStatus.BAD_GATEWAY;
+          errorMessage = `Erro ${statusCode} do Facebook: ${JSON.stringify(error.response.data || {})}`;
           logger.error('Detalhes da resposta de erro:', {
             status: statusCode,
             data: error.response.data,
@@ -266,7 +311,6 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
           // Erro sem resposta (timeout, DNS, etc)
           errorMessage = `Erro de conexão com o Facebook: ${error.message}`;
           logger.error('Detalhes do erro de requisição:', {
-            request: error.request,
             message: error.message,
           });
         } else {
@@ -283,10 +327,13 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
 
       // Incrementar tentativa e usar espera segura
       attempt += 1;
-      // Esperar antes da próxima tentativa
-      logger.info(`Aguardando ${RETRY_DELAY * attempt}ms antes da próxima tentativa`);
+
+      // Esperar antes da próxima tentativa com backoff exponencial
+      const delay = RETRY_DELAY * 2 ** (attempt - 1);
+      logger.info(`Aguardando ${delay}ms antes da próxima tentativa`);
+
       await new Promise((resolve) => {
-        setTimeout(resolve, RETRY_DELAY * attempt);
+        setTimeout(resolve, delay);
       });
 
       // Chamar recursivamente para a próxima tentativa
