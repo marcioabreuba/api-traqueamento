@@ -1,62 +1,70 @@
 const Joi = require('joi');
 const { objectId } = require('./custom.validation');
 
-const createEvent = {
+const eventValidation = {
   body: Joi.object().keys({
-    event_name: Joi.string()
-      .required()
-      .valid(
-        // Eventos de Visualização
-        'PageView',
-        'ViewContent',
-        'ViewItemList',
-        'ViewCategory',
-        'ViewSearchResults',
-        'ViewCart',
-        'ViewHome',
-        // Eventos de Checkout
-        'InitiateCheckout',
-        'StartCheckout',
-        'RegisterDone',
-        'AddShippingInfo',
-        'AddPaymentInfo',
-        'AddCoupon',
-        'Refused - credit_card',
-        'Purchase',
-        'Purchase - pix',
-        'Purchase - paid_pix',
-        'Purchase - credit_card',
-        'Purchase - billet',
-        'Purchase - high_ticket',
-        // Outros eventos
-        'Lead',
-        'CompleteRegistration',
-        'Subscribe',
-        'AddToCart',
-        'Search',
-        'Contact',
-        'AddToWishlist',
-        'CustomizeProduct',
-        'Donate',
-        'FindLocation'
-      ),
-    event_time: Joi.number().integer(),
-    domain: Joi.string(),
+    event_name: Joi.string().valid(
+      // Eventos de Visualização
+      'PageView',
+      'ViewContent',
+      'ViewItemList',
+      'ViewCategory',
+      'ViewSearchResults',
+      'ViewCart',
+      'ViewHome',
+      
+      // Eventos de Checkout
+      'InitiateCheckout',
+      'StartCheckout',
+      'RegisterDone',
+      'AddShippingInfo',
+      'AddPaymentInfo',
+      'AddCoupon',
+      'Purchase - credit_card',
+      'Purchase - boleto',
+      'Purchase - pix',
+      'Purchase - transfer',
+      
+      // Eventos de Interação
+      'AddToCart',
+      'Search',
+      'Contact',
+      'AddToWishlist',
+      'CustomizeProduct',
+      'Donate',
+      'FindLocation',
+      
+      // Eventos de Conversão
+      'Lead',
+      'CompleteRegistration',
+      'Subscribe'
+    ).required(),
+    event_time: Joi.number().required(),
+    domain: Joi.string().required(),
     user_data: Joi.object().keys({
-      email: Joi.string().email(),
-      phone: Joi.string(),
-      first_name: Joi.string(),
-      last_name: Joi.string(),
+      em: Joi.array().items(Joi.string().email()),
+      ph: Joi.array().items(Joi.string()),
       external_id: Joi.string(),
-      ip_address: Joi.string(),
-      user_agent: Joi.string(),
-      city: Joi.string(),
-      state: Joi.string(),
-      country: Joi.string(),
-      zip_code: Joi.string(),
+      client_ip_address: Joi.string(),
+      client_user_agent: Joi.string(),
+      fbc: Joi.string(),
+      fbp: Joi.string(),
+      subscription_id: Joi.string(),
+      fb_login_id: Joi.string()
     }),
-    custom_data: Joi.object().unknown(true),
-  }),
+    custom_data: Joi.object().keys({
+      content_name: Joi.string(),
+      content_category: Joi.string(),
+      content_ids: Joi.array().items(Joi.string()),
+      content_type: Joi.string(),
+      value: Joi.number(),
+      currency: Joi.string(),
+      num_items: Joi.number(),
+      search_string: Joi.string(),
+      status: Joi.boolean(),
+      description: Joi.string()
+    })
+  })
 };
 
 const getEvents = {
@@ -77,7 +85,7 @@ const getEvent = {
 };
 
 module.exports = {
-  createEvent,
+  eventValidation,
   getEvents,
   getEvent,
 }; 

@@ -30,9 +30,32 @@ fbq('track', 'PageView');
 
 ### Página de Produto
 ```liquid
-<div class="product" data-product-id="{{ product.id }}">
-  <h1 data-product-name="{{ product.name }}">{{ product.name }}</h1>
-  <span data-product-price="{{ product.price }}">{{ product.price }}</span>
+<div class="product" 
+  data-product-id="{{ product.id }}"
+  data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+  data-product-name="{{ product.title | strip_html | escape | strip_newlines }}"
+  data-product-price="{{ product.selected_or_first_available_variant.price | money_without_currency }}"
+  data-product-sku="{{ product.selected_or_first_available_variant.sku | strip_html | escape }}"
+  data-product-brand="{{ product.vendor }}"
+  data-product-variant="{{ product.selected_or_first_available_variant.title | strip_html | escape }}"
+  data-product-category="{{ product.type | strip_html | escape }}"
+  data-product-quantity="1">
+  <h1>{{ product.title }}</h1>
+  <span>{{ product.selected_or_first_available_variant.price }}</span>
+  <button 
+    data-add-to-cart
+    data-product-id="{{ product.id }}"
+    data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+    data-product-name="{{ product.title | strip_html | escape | strip_newlines }}"
+    data-product-price="{{ product.selected_or_first_available_variant.price | money_without_currency }}"
+    data-product-sku="{{ product.selected_or_first_available_variant.sku | strip_html | escape }}"
+    data-product-brand="{{ product.vendor }}"
+    data-product-variant="{{ product.selected_or_first_available_variant.title | strip_html | escape }}"
+    data-product-category="{{ product.type | strip_html | escape }}"
+    data-product-quantity="1">
+    Adicionar ao Carrinho
+  </button>
+  <input type="number" data-quantity-{{ product.id }} value="1" min="1">
 </div>
 ```
 
@@ -40,9 +63,33 @@ fbq('track', 'PageView');
 ```liquid
 <div class="products-list">
   {% for product in products %}
-    <div class="product-item" data-product-item data-product-id="{{ product.id }}">
-      <h2>{{ product.name }}</h2>
-      <span>{{ product.price }}</span>
+    <div class="product-item" 
+      data-product-item 
+      data-product-id="{{ product.id }}"
+      data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+      data-product-name="{{ product.title | strip_html | escape | strip_newlines }}"
+      data-product-price="{{ product.selected_or_first_available_variant.price | money_without_currency }}"
+      data-product-sku="{{ product.selected_or_first_available_variant.sku | strip_html | escape }}"
+      data-product-brand="{{ product.vendor }}"
+      data-product-variant="{{ product.selected_or_first_available_variant.title | strip_html | escape }}"
+      data-product-category="{{ product.type | strip_html | escape }}"
+      data-product-quantity="{{ product.selected_or_first_available_variant.inventory_quantity }}">
+      <h2>{{ product.title }}</h2>
+      <span>{{ product.selected_or_first_available_variant.price }}</span>
+      <button 
+        data-add-to-cart
+        data-product-id="{{ product.id }}"
+        data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+        data-product-name="{{ product.title | strip_html | escape | strip_newlines }}"
+        data-product-price="{{ product.selected_or_first_available_variant.price | money_without_currency }}"
+        data-product-sku="{{ product.selected_or_first_available_variant.sku | strip_html | escape }}"
+        data-product-brand="{{ product.vendor }}"
+        data-product-variant="{{ product.selected_or_first_available_variant.title | strip_html | escape }}"
+        data-product-category="{{ product.type | strip_html | escape }}"
+        data-product-quantity="1">
+        Adicionar ao Carrinho
+      </button>
+      <input type="number" data-quantity-{{ product.id }} value="1" min="1">
     </div>
   {% endfor %}
 </div>
@@ -57,6 +104,15 @@ fbq('track', 'PageView');
       <div class="product-item" data-product-item data-product-id="{{ product.id }}">
         <h2>{{ product.name }}</h2>
         <span>{{ product.price }}</span>
+        <button 
+          data-add-to-cart
+          data-product-id="{{ product.id }}"
+          data-product-name="{{ product.name }}"
+          data-product-price="{{ product.price }}"
+        >
+          Adicionar ao Carrinho
+        </button>
+        <input type="number" data-quantity-{{ product.id }} value="1" min="1">
       </div>
     {% endfor %}
   </div>
@@ -70,6 +126,15 @@ fbq('track', 'PageView');
     <div class="search-result" data-search-result data-product-id="{{ product.id }}">
       <h2>{{ product.name }}</h2>
       <span>{{ product.price }}</span>
+      <button 
+        data-add-to-cart
+        data-product-id="{{ product.id }}"
+        data-product-name="{{ product.name }}"
+        data-product-price="{{ product.price }}"
+      >
+        Adicionar ao Carrinho
+      </button>
+      <input type="number" data-quantity-{{ product.id }} value="1" min="1">
     </div>
   {% endfor %}
 </div>
@@ -77,10 +142,22 @@ fbq('track', 'PageView');
 
 ### Carrinho
 ```liquid
-<div class="cart" data-cart-total="{{ cart.total }}">
+<div class="cart" data-cart-container data-cart-total="{{ cart.total_price | money_without_currency }}">
   {% for item in cart.items %}
-    <div class="cart-item" data-cart-item data-product-id="{{ item.product.id }}">
-      <!-- conteúdo do item -->
+    <div class="cart-item" 
+      data-cart-item 
+      data-product-id="{{ item.product_id }}"
+      data-variant-id="{{ item.variant_id }}"
+      data-product-name="{{ item.title | strip_html | escape | strip_newlines }}"
+      data-product-price="{{ item.variant.price | money_without_currency }}"
+      data-product-sku="{{ item.variant.sku | strip_html | escape }}"
+      data-product-brand="{{ item.vendor }}"
+      data-product-variant="{{ item.variant.title | strip_html | escape }}"
+      data-product-category="{{ item.product.type | strip_html | escape }}"
+      data-product-quantity="{{ item.quantity }}">
+      <h3>{{ item.title }}</h3>
+      <span>{{ item.variant.price }}</span>
+      <span>Quantidade: {{ item.quantity }}</span>
     </div>
   {% endfor %}
 </div>
@@ -157,3 +234,181 @@ Se o pixel não estiver funcionando:
 3. Verifique o console do navegador para erros
 4. Use o Facebook Pixel Helper para debug
 5. Verifique se há bloqueadores de anúncios interferindo 
+
+## Atributos Data Necessários
+
+### Página de Produto
+```liquid
+<div class="product" 
+  data-product-id="{{ product.id }}"
+  data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+  data-product-name="{{ product.title | strip_html | escape | strip_newlines }}"
+  data-product-price="{{ product.selected_or_first_available_variant.price | money_without_currency }}"
+  data-product-sku="{{ product.selected_or_first_available_variant.sku | strip_html | escape }}"
+  data-product-brand="{{ product.vendor }}"
+  data-product-variant="{{ product.selected_or_first_available_variant.title | strip_html | escape }}"
+  data-product-category="{{ product.type | strip_html | escape }}"
+  data-product-quantity="1">
+  <h1>{{ product.title }}</h1>
+  <span>{{ product.selected_or_first_available_variant.price }}</span>
+  <button 
+    data-add-to-cart
+    data-product-id="{{ product.id }}"
+    data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+    data-product-name="{{ product.title | strip_html | escape | strip_newlines }}"
+    data-product-price="{{ product.selected_or_first_available_variant.price | money_without_currency }}"
+    data-product-sku="{{ product.selected_or_first_available_variant.sku | strip_html | escape }}"
+    data-product-brand="{{ product.vendor }}"
+    data-product-variant="{{ product.selected_or_first_available_variant.title | strip_html | escape }}"
+    data-product-category="{{ product.type | strip_html | escape }}"
+    data-product-quantity="1">
+    Adicionar ao Carrinho
+  </button>
+  <input type="number" data-quantity-{{ product.id }} value="1" min="1">
+</div>
+```
+
+### Lista de Produtos
+```liquid
+<div class="products-list">
+  {% for product in products %}
+    <div class="product-item" 
+      data-product-item 
+      data-product-id="{{ product.id }}"
+      data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+      data-product-name="{{ product.title | strip_html | escape | strip_newlines }}"
+      data-product-price="{{ product.selected_or_first_available_variant.price | money_without_currency }}"
+      data-product-sku="{{ product.selected_or_first_available_variant.sku | strip_html | escape }}"
+      data-product-brand="{{ product.vendor }}"
+      data-product-variant="{{ product.selected_or_first_available_variant.title | strip_html | escape }}"
+      data-product-category="{{ product.type | strip_html | escape }}"
+      data-product-quantity="{{ product.selected_or_first_available_variant.inventory_quantity }}">
+      <h2>{{ product.title }}</h2>
+      <span>{{ product.selected_or_first_available_variant.price }}</span>
+      <button 
+        data-add-to-cart
+        data-product-id="{{ product.id }}"
+        data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+        data-product-name="{{ product.title | strip_html | escape | strip_newlines }}"
+        data-product-price="{{ product.selected_or_first_available_variant.price | money_without_currency }}"
+        data-product-sku="{{ product.selected_or_first_available_variant.sku | strip_html | escape }}"
+        data-product-brand="{{ product.vendor }}"
+        data-product-variant="{{ product.selected_or_first_available_variant.title | strip_html | escape }}"
+        data-product-category="{{ product.type | strip_html | escape }}"
+        data-product-quantity="1">
+        Adicionar ao Carrinho
+      </button>
+      <input type="number" data-quantity-{{ product.id }} value="1" min="1">
+    </div>
+  {% endfor %}
+</div>
+```
+
+### Carrinho
+```liquid
+<div class="cart" data-cart-container data-cart-total="{{ cart.total_price | money_without_currency }}">
+  {% for item in cart.items %}
+    <div class="cart-item" 
+      data-cart-item 
+      data-product-id="{{ item.product_id }}"
+      data-variant-id="{{ item.variant_id }}"
+      data-product-name="{{ item.title | strip_html | escape | strip_newlines }}"
+      data-product-price="{{ item.variant.price | money_without_currency }}"
+      data-product-sku="{{ item.variant.sku | strip_html | escape }}"
+      data-product-brand="{{ item.vendor }}"
+      data-product-variant="{{ item.variant.title | strip_html | escape }}"
+      data-product-category="{{ item.product.type | strip_html | escape }}"
+      data-product-quantity="{{ item.quantity }}">
+      <h3>{{ item.title }}</h3>
+      <span>{{ item.variant.price }}</span>
+      <span>Quantidade: {{ item.quantity }}</span>
+    </div>
+  {% endfor %}
+</div>
+```
+
+### Categoria
+```liquid
+<div class="category" data-category-id="{{ category.id }}">
+  <h1 data-category-name="{{ category.name }}">{{ category.name }}</h1>
+  <div class="products-list">
+    {% for product in category.products %}
+      <div class="product-item" data-product-item data-product-id="{{ product.id }}">
+        <h2>{{ product.name }}</h2>
+        <span>{{ product.price }}</span>
+        <button 
+          data-add-to-cart
+          data-product-id="{{ product.id }}"
+          data-product-name="{{ product.name }}"
+          data-product-price="{{ product.price }}"
+        >
+          Adicionar ao Carrinho
+        </button>
+        <input type="number" data-quantity-{{ product.id }} value="1" min="1">
+      </div>
+    {% endfor %}
+  </div>
+</div>
+```
+
+### Resultados de Busca
+```liquid
+<div class="search-results">
+  {% for product in search.results %}
+    <div class="search-result" data-search-result data-product-id="{{ product.id }}">
+      <h2>{{ product.name }}</h2>
+      <span>{{ product.price }}</span>
+      <button 
+        data-add-to-cart
+        data-product-id="{{ product.id }}"
+        data-product-name="{{ product.name }}"
+        data-product-price="{{ product.price }}"
+      >
+        Adicionar ao Carrinho
+      </button>
+      <input type="number" data-quantity-{{ product.id }} value="1" min="1">
+    </div>
+  {% endfor %}
+</div>
+```
+
+## Eventos Implementados
+
+### ViewContent
+- Disparado ao visualizar um produto
+- Requer atributos: data-product-id, data-product-name, data-product-price
+
+### ViewList
+- Disparado em listas de produtos (categorias e busca)
+- Requer atributos: data-product-item, data-product-id
+
+### ViewCart
+- Disparado ao visualizar o carrinho
+- Requer atributos: data-cart-container, data-cart-total, data-cart-item
+
+### AddToCart
+- Disparado ao adicionar produto ao carrinho
+- Requer atributos: data-add-to-cart, data-product-id, data-product-name, data-product-price, data-quantity-{id}
+
+## Validação e Tratamento de Erros
+
+O sistema implementa:
+1. Validação de campos obrigatórios
+2. Sistema de retry para falhas de rede
+3. Logs de erro detalhados
+4. Limpeza automática de observers
+
+## Testes
+
+Para verificar se os eventos estão funcionando:
+1. Use o Facebook Pixel Helper
+2. Verifique o console do navegador para logs de erro
+3. Teste cada evento individualmente
+4. Verifique se os dados estão sendo enviados corretamente
+
+## Observações
+
+- Todos os valores monetários devem estar no formato brasileiro
+- IDs de produtos devem ser únicos
+- Quantidades devem ser números inteiros positivos
+- O sistema limpa automaticamente os observers ao fechar a página 

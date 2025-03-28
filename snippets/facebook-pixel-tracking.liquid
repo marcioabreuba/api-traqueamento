@@ -77,28 +77,66 @@ if (typeof fbq !== 'undefined') {
         try {
             const eventData = {
                 ...baseData,
-                ...data
+                ...data,
+                event_name: eventType,
+                event_time: Math.floor(Date.now() / 1000),
+                domain: window.location.hostname
             };
+
+            console.log(`[Traq] Preparando envio do evento ${eventType}:`, eventData);
 
             // Envia o evento para o Facebook
             fbq('track', eventType, eventData, { eventID: eventId });
+            console.log(`[Traq] Evento ${eventType} enviado para o Facebook com ID: ${eventId}`);
 
             // Envia para nossa API
-            await fetch('https://api-traqueamento.onrender.com/events/send', {
+            const apiResponse = await fetch('https://api-traqueamento.onrender.com/events/send', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 
                     'Content-Type': 'application/json',
                     'X-Event-ID': eventId
                 },
-                body: JSON.stringify({
-                    ...eventData,
-                    eventType
-                })
+                body: JSON.stringify(eventData)
             });
 
+            if (!apiResponse.ok) {
+                const errorText = await apiResponse.text();
+                throw new Error(`Erro na API: ${apiResponse.status} - ${errorText}`);
+            }
+
+            const responseData = await apiResponse.json();
+            console.log(`[Traq] Evento ${eventType} enviado com sucesso para a API!`, responseData);
         } catch (error) {
-            console.error(`Erro ao rastrear evento ${eventType}:`, error);
+            console.error(`[Traq] Erro ao rastrear evento ${eventType}:`, error);
+            // Tenta enviar novamente após 2 segundos
+            setTimeout(async () => {
+                try {
+                    console.log(`[Traq] Tentando reenviar evento ${eventType}...`);
+                    const retryResponse = await fetch('https://api-traqueamento.onrender.com/events/send', {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'X-Event-ID': eventId
+                        },
+                        body: JSON.stringify({
+                            ...eventData,
+                            event_name: eventType,
+                            event_time: Math.floor(Date.now() / 1000),
+                            domain: window.location.hostname
+                        })
+                    });
+
+                    if (!retryResponse.ok) {
+                        throw new Error(`Erro no retry: ${retryResponse.status}`);
+                    }
+
+                    console.log(`[Traq] Evento ${eventType} reenviado com sucesso!`);
+                } catch (retryError) {
+                    console.error(`[Traq] Erro no retry do evento ${eventType}:`, retryError);
+                }
+            }, 2000);
         }
     }
 
@@ -108,216 +146,756 @@ if (typeof fbq !== 'undefined') {
 
     // PageView imediato
     fbq('track', 'PageView', initData);
+    console.log('Evento PageView enviado');
 
-    // Eventos específicos da Yampi
-    document.addEventListener('DOMContentLoaded', function() {
-        // ViewHome event
-        if (window.location.pathname === '/') {
-            sendEvent('ViewHome', {
-                content_type: 'homepage',
-                content_name: 'Homepage'
-            });
+    // Variável para controlar eventos já disparados
+    const firedEvents = {
+        ViewHome: false,
+        ViewContent: false,
+        ViewCategory: false,
+        ViewList: false,
+        ViewCart: false,
+        AddToCart: false
+    };
+
+    // Detecta tipo de página atual
+    function detectPageType() {
+        const path = window.location.pathname;
+        
+        // Página inicial
+        if (path === '/' || path === '/index' || path === '') {
+            return 'home';
         }
-
-        // ViewCart event
-        if (window.location.pathname.includes('/carrinho')) {
-            const cartTotal = document.querySelector('[data-cart-total]')?.textContent;
-            const cartItems = document.querySelectorAll('[data-cart-item]');
-            
-            sendEvent('ViewCart', {
-                content_type: 'cart',
-                value: cartTotal ? parseFloat(cartTotal.replace(/[^\d,]/g, '').replace(',', '.')) : 0,
-                currency: 'BRL',
-                num_items: cartItems.length,
-                content_ids: Array.from(cartItems).map(item => item.getAttribute('data-product-id'))
-            });
+        
+        // Página de produto - verifica padrões comuns de URL
+        if (path.includes('/produto/') || path.includes('/products/') || 
+            path.includes('/product/') || document.querySelector('.product-template')) {
+            return 'product';
         }
-
-        // ViewContent event (produto)
-        if (window.location.pathname.includes('/produto/')) {
-            const productName = document.querySelector('[data-product-name]')?.textContent;
-            const productId = document.querySelector('[data-product-id]')?.getAttribute('data-product-id');
-            const productPrice = document.querySelector('[data-product-price]')?.textContent;
-            
-            sendEvent('ViewContent', {
-                content_type: 'product',
-                content_name: productName,
-                content_ids: [productId],
-                value: productPrice ? parseFloat(productPrice.replace(/[^\d,]/g, '').replace(',', '.')) : 0,
-                currency: 'BRL'
-            });
+        
+        // Página de categoria/coleção
+        if (path.includes('/categoria/') || path.includes('/collections/') || 
+            path.includes('/collection/') || document.querySelector('.collection-template')) {
+            return 'collection';
         }
-
-        // ViewItemList event (lista de produtos)
-        if (window.location.pathname.includes('/produtos') || window.location.pathname.includes('/categoria/')) {
-            const productList = document.querySelectorAll('[data-product-item]');
-            const categoryName = document.querySelector('[data-category-name]')?.textContent;
-            
-            if (productList.length > 0) {
-                sendEvent('ViewItemList', {
-                    content_type: 'product_group',
-                    content_name: categoryName || 'Lista de Produtos',
-                    content_ids: Array.from(productList).map(item => item.getAttribute('data-product-id')),
-                    num_items: productList.length,
-                    content_category: categoryName || 'Produtos'
-                });
-            }
+        
+        // Página de carrinho - verificação estrita
+        if ((path === '/cart' || path === '/carrinho' || path === '/cart/') || 
+            document.querySelector('body.cart, body.template-cart')) {
+            return 'cart';
         }
-
-        // ViewCategory event
-        if (window.location.pathname.includes('/categoria/')) {
-            const categoryName = document.querySelector('[data-category-name]')?.textContent;
-            const categoryId = document.querySelector('[data-category-id]')?.getAttribute('data-category-id');
-            
-            if (categoryName) {
-                sendEvent('ViewCategory', {
-                    content_type: 'product_group',
-                    content_name: categoryName,
-                    content_ids: [categoryId],
-                    content_category: categoryName
-                });
-            }
+        
+        // Página de busca
+        if (path.includes('/search') || path.includes('/busca') || 
+            new URLSearchParams(window.location.search).has('q')) {
+            return 'search';
         }
-
-        // ViewSearchResults event
-        if (window.location.pathname.includes('/busca')) {
-            const searchTerm = new URLSearchParams(window.location.search).get('q');
-            const searchResults = document.querySelectorAll('[data-search-result]');
-            
-            if (searchTerm && searchResults.length > 0) {
-                sendEvent('ViewSearchResults', {
-                    search_string: searchTerm,
-                    content_type: 'product_group',
-                    content_ids: Array.from(searchResults).map(result => result.getAttribute('data-product-id')),
-                    num_items: searchResults.length
-                });
-            }
+        
+        // Checkout
+        if (path.includes('/checkout') || path.includes('/finalizar-compra')) {
+            return 'checkout';
         }
+        
+        // Confirmação de pedido
+        if (path.includes('/obrigado') || path.includes('/thank_you') || 
+            path.includes('/orders/') || path.includes('/pedido-confirmado')) {
+            return 'order_confirmation';
+        }
+        
+        return 'other';
+    }
 
-        // AddToCart event
-        document.addEventListener('addToCart', function(e) {
-            const { productId, productName, price, quantity } = e.detail;
-            
-            sendEvent('AddToCart', {
-                content_type: 'product',
-                content_ids: [productId],
-                content_name: productName,
-                value: parseFloat(price.replace(/[^\d,]/g, '').replace(',', '.')),
-                currency: 'BRL',
-                num_items: quantity
-            });
-        });
-
-        // Checkout events
-        if (window.location.pathname.includes('/checkout')) {
-            // InitiateCheckout
-            sendEvent('InitiateCheckout', {
-                content_type: 'product',
-                value: parseFloat(document.querySelector('[data-cart-total]')?.textContent.replace(/[^\d,]/g, '').replace(',', '.') || '0'),
-                currency: 'BRL',
-                num_items: document.querySelectorAll('[data-cart-item]').length,
-                content_ids: Array.from(document.querySelectorAll('[data-cart-item]')).map(item => item.getAttribute('data-product-id'))
-            });
-
-            // StartCheckout (quando começa a preencher o formulário)
-            const checkoutForm = document.querySelector('form[data-checkout-form]');
-            if (checkoutForm) {
-                checkoutForm.addEventListener('focus', function() {
-                    sendEvent('StartCheckout');
-                }, { once: true });
-            }
-
-            // RegisterDone (quando termina o formulário)
-            if (checkoutForm) {
-                checkoutForm.addEventListener('submit', function() {
-                    sendEvent('RegisterDone');
-                });
-            }
-
-            // AddShippingInfo
-            const shippingForm = document.querySelector('form[data-shipping-form]');
-            if (shippingForm) {
-                shippingForm.addEventListener('change', function() {
-                    sendEvent('AddShippingInfo');
-                });
-            }
-
-            // AddPaymentInfo
-            const paymentForm = document.querySelector('form[data-payment-form]');
-            if (paymentForm) {
-                paymentForm.addEventListener('change', function() {
-                    sendEvent('AddPaymentInfo');
-                });
-            }
-
-            // AddCoupon
-            const couponForm = document.querySelector('form[data-coupon-form]');
-            if (couponForm) {
-                couponForm.addEventListener('submit', function() {
-                    sendEvent('AddCoupon');
-                });
+    // Função para encontrar informações de produto na página
+    function findProductInfo() {
+        // Tenta encontrar o ID e o nome do produto de várias maneiras
+        let productId = '';
+        let productName = '';
+        let productPrice = 0;
+        
+        // Tenta encontrar nas meta tags
+        const metaProduct = document.querySelector('meta[property="og:product_id"], meta[property="product:product_id"]');
+        if (metaProduct) {
+            productId = metaProduct.getAttribute('content');
+        }
+        
+        const metaTitle = document.querySelector('meta[property="og:title"]');
+        if (metaTitle) {
+            productName = metaTitle.getAttribute('content');
+        }
+        
+        const metaPrice = document.querySelector('meta[property="og:price:amount"], meta[property="product:price:amount"]');
+        if (metaPrice) {
+            productPrice = parseFloat(metaPrice.getAttribute('content')) || 0;
+        }
+        
+        // Se não encontrou nas meta tags, tenta encontrar em elementos com atributos específicos
+        if (!productId) {
+            const productElement = document.querySelector('[data-product-id], [id*="product-"], [class*="product-"]');
+            if (productElement) {
+                productId = productElement.getAttribute('data-product-id') || productElement.id || '';
             }
         }
+        
+        if (!productName) {
+            const productNameElement = document.querySelector('[data-product-name], .product-title, h1');
+            if (productNameElement) {
+                productName = productNameElement.textContent.trim();
+            } else {
+                productName = document.title;
+            }
+        }
+        
+        if (!productPrice) {
+            const priceElement = document.querySelector('[data-product-price], .product-price, .price');
+            if (priceElement) {
+                const priceText = priceElement.textContent.trim().replace(/[^\d,.]/g, '').replace(',', '.');
+                productPrice = parseFloat(priceText) || 0;
+            }
+        }
+        
+        return {
+            id: productId,
+            name: productName,
+            price: productPrice,
+            currency: '{{ shop.currency }}' || 'BRL'
+        };
+    }
 
-        // Purchase event
-        if (window.location.pathname.includes('/pedido-confirmado')) {
-            const orderTotal = document.querySelector('[data-order-total]')?.textContent;
-            const orderItems = document.querySelectorAll('[data-order-item]');
-            const paymentMethod = document.querySelector('[data-payment-method]')?.textContent;
-            
-            const eventData = {
-                content_type: 'product',
-                value: orderTotal ? parseFloat(orderTotal.replace(/[^\d,]/g, '').replace(',', '.')) : 0,
-                currency: 'BRL',
-                num_items: orderItems.length,
-                content_ids: Array.from(orderItems).map(item => item.getAttribute('data-product-id')),
-                payment_method: paymentMethod
-            };
-
-            // Determina o tipo específico de Purchase baseado no método de pagamento
-            let purchaseEvent = 'Purchase';
-            if (paymentMethod) {
-                switch(paymentMethod.toLowerCase()) {
-                    case 'pix':
-                        purchaseEvent = 'Purchase - pix';
-                        break;
-                    case 'cartão de crédito':
-                        purchaseEvent = 'Purchase - credit_card';
-                        break;
-                    case 'boleto':
-                        purchaseEvent = 'Purchase - billet';
-                        break;
+    // Função para obter o nome da categoria/coleção atual
+    function getCategoryName() {
+        // Tenta encontrar o nome da categoria em elementos específicos
+        const categoryElement = document.querySelector(
+            '[data-category-name], .collection-title, .collection-header h1, h1.title'
+        );
+        
+        if (categoryElement) {
+            return categoryElement.textContent.trim();
+        }
+        
+        // Extrai da URL como alternativa
+        const path = window.location.pathname;
+        if (path.includes('/categoria/') || path.includes('/collections/')) {
+            const segments = path.split('/');
+            for (let i = 0; i < segments.length; i++) {
+                if (segments[i] === 'categoria' || segments[i] === 'collections') {
+                    if (i + 1 < segments.length) {
+                        return segments[i + 1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    }
                 }
             }
-
-            // Verifica se é um pedido de alto valor
-            const totalValue = parseFloat(orderTotal.replace(/[^\d,]/g, '').replace(',', '.') || '0');
-            if (totalValue >= 5000) { // Ajuste este valor conforme necessário
-                purchaseEvent = 'Purchase - high_ticket';
-            }
-
-            sendEvent(purchaseEvent, eventData);
         }
+        
+        // Usa o título da página como último recurso
+        return document.title;
+    }
 
-        // Search event
-        const searchForm = document.querySelector('form[data-search-form]');
-        if (searchForm) {
-            searchForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                const searchTerm = this.querySelector('input[type="search"]').value;
-                const searchResults = document.querySelectorAll('[data-search-result]');
+    // Função para encontrar produtos em uma lista/coleção
+    function findProductsInList() {
+        const productSelectors = [
+            '[data-product-id]', 
+            '[data-product-item]', 
+            '.product-item', 
+            '.product-card', 
+            '.product', 
+            '[class*="product-"]',
+            '.grid__item:has(a[href*="/products/"])',
+            'li:has(a[href*="/products/"])'
+        ];
+        
+        // Combinar todos os seletores em um
+        const combinedSelector = productSelectors.join(', ');
+        const productElements = document.querySelectorAll(combinedSelector);
+        
+        if (productElements.length === 0) {
+            console.log('Nenhum elemento de produto encontrado com seletores específicos.');
+            
+            // Abordagem alternativa - procurar links para produtos
+            const productLinks = document.querySelectorAll('a[href*="/products/"]');
+            if (productLinks.length > 0) {
+                console.log('Links de produtos encontrados:', productLinks.length);
                 
-                sendEvent('Search', {
-                    search_string: searchTerm,
-                    content_ids: Array.from(searchResults).map(result => result.getAttribute('data-product-id'))
+                // Extrair produtos únicos dos links
+                const uniqueProducts = new Map();
+                productLinks.forEach(link => {
+                    const href = link.getAttribute('href');
+                    const matches = href.match(/\/products\/([^/?#]+)/);
+                    if (matches && matches[1]) {
+                        const productId = matches[1];
+                        
+                        // Se ainda não adicionamos esse produto
+                        if (!uniqueProducts.has(productId)) {
+                            // Tenta encontrar informações do produto
+                            const productCard = link.closest('li, div, article');
+                            const nameElement = productCard?.querySelector('h2, h3, h4, .product-title, [class*="title"]');
+                            const priceElement = productCard?.querySelector('.price, [class*="price"]');
+                            
+                            const name = nameElement ? nameElement.textContent.trim() : '';
+                            let price = 0;
+                            if (priceElement) {
+                                const priceText = priceElement.textContent.trim().replace(/[^\d,.]/g, '').replace(',', '.');
+                                price = parseFloat(priceText) || 0;
+                            }
+                            
+                            uniqueProducts.set(productId, {
+                                id: productId,
+                                name: name,
+                                price: price,
+                                currency: '{{ shop.currency }}' || 'BRL'
+                            });
+                        }
+                    }
+                });
+                
+                return Array.from(uniqueProducts.values());
+            }
+            
+            return [];
+        }
+        
+        return extractProductsFromElements(productElements);
+    }
+
+    // Extrai informações de produto de elementos HTML
+    function extractProductsFromElements(elements) {
+        const products = [];
+        
+        elements.forEach(element => {
+            // Tenta obter ID do produto
+            let id = '';
+            id = element.getAttribute('data-product-id') || 
+                 element.getAttribute('data-variant-id') || 
+                 element.getAttribute('data-line-item-id') || 
+                 element.getAttribute('id') || '';
+                
+            // Se não encontrou ID através de atributos, tenta através de links
+            if (!id) {
+                const productLink = element.querySelector('a[href*="/products/"]');
+                if (productLink) {
+                    const href = productLink.getAttribute('href');
+                    const matches = href.match(/\/products\/([^/?#]+)/);
+                    if (matches && matches[1]) {
+                        id = matches[1];
+                    }
+                }
+            }
+            
+            // Tenta obter nome do produto
+            let name = '';
+            const nameSelectors = [
+                '[data-product-name]', 
+                '.product-name', 
+                '.cart-item-name', 
+                '.cart-item-title',
+                '[class*="title"]',
+                'h3', 
+                'h4', 
+                'a'
+            ];
+            
+            for (const selector of nameSelectors) {
+                const nameElement = element.querySelector(selector);
+                if (nameElement) {
+                    name = nameElement.textContent.trim();
+                    break;
+                }
+            }
+            
+            // Tenta obter preço do produto
+            let price = 0;
+            const priceSelectors = [
+                '[data-product-price]', 
+                '.product-price', 
+                '.cart-item-price',
+                '.price',
+                '[class*="price"]'
+            ];
+            
+            for (const selector of priceSelectors) {
+                const priceElement = element.querySelector(selector);
+                if (priceElement) {
+                    const priceText = priceElement.textContent.trim().replace(/[^\d,.]/g, '').replace(',', '.');
+                    price = parseFloat(priceText) || 0;
+                    break;
+                }
+            }
+            
+            // Tenta obter quantidade
+            let quantity = 1;
+            const quantitySelectors = [
+                '[data-quantity]',
+                'input[name*="quantity"]',
+                '.cart-item-quantity',
+                '[class*="quantity"]'
+            ];
+            
+            for (const selector of quantitySelectors) {
+                const quantityElement = element.querySelector(selector);
+                if (quantityElement) {
+                    if (quantityElement.tagName === 'INPUT') {
+                        quantity = parseInt(quantityElement.value) || 1;
+                    } else {
+                        quantity = parseInt(quantityElement.textContent.trim()) || 1;
+                    }
+                    break;
+                }
+            }
+            
+            if (id || name) {
+                products.push({
+                    id: id,
+                    name: name,
+                    price: price,
+                    quantity: quantity,
+                    currency: '{{ shop.currency }}' || 'BRL'
+                });
+            }
+        });
+        
+        return products;
+    }
+
+    // Função que dispara eventos com base no tipo de página
+    function triggerPageEvents() {
+        const pageType = detectPageType();
+        console.log('Tipo de página detectado:', pageType);
+        
+        switch (pageType) {
+            case 'home':
+                // Evento de visualização da página inicial
+                if (!firedEvents.ViewHome) {
+                    sendEvent('ViewHome', {
+                        content_type: 'homepage',
+                        content_name: 'Homepage'
+                    });
+                    firedEvents.ViewHome = true;
+                }
+                break;
+                
+            case 'product':
+                // Evento de visualização de produto
+                if (!firedEvents.ViewContent) {
+                    const product = findProductInfo();
+                    if (product.id || product.name) {
+                        sendEvent('ViewContent', {
+                            content_type: 'product',
+                            content_name: product.name,
+                            content_ids: [product.id],
+                            value: product.price,
+                            currency: product.currency
+                        });
+                        firedEvents.ViewContent = true;
+                    }
+                }
+                break;
+                
+            case 'collection':
+                // Evento de visualização de categoria/coleção
+                if (!firedEvents.ViewCategory) {
+                    const categoryName = getCategoryName();
+                    sendEvent('ViewCategory', {
+                        content_type: 'product_group',
+                        content_name: categoryName,
+                        content_category: categoryName
+                    });
+                    firedEvents.ViewCategory = true;
+                }
+                
+                // Evento ViewList - enviado após um pequeno atraso para garantir
+                // que os produtos tenham sido carregados no DOM
+                if (!firedEvents.ViewList) {
+                    setTimeout(() => {
+                        const products = findProductsInList();
+                        if (products && products.length > 0) {
+                            const categoryName = getCategoryName();
+                            sendEvent('ViewList', {
+                                content_type: 'product_group',
+                                content_name: categoryName,
+                                content_ids: products.map(p => p.id).filter(Boolean),
+                                num_items: products.length
+                            });
+                            firedEvents.ViewList = true;
+                        }
+                    }, 1000);
+                }
+                break;
+                
+            case 'search':
+                // Evento de visualização de resultados de busca
+                const searchTerm = new URLSearchParams(window.location.search).get('q') || '';
+                
+                // Aguarda um pouco para garantir que os resultados da busca estejam carregados
+                setTimeout(() => {
+                    const searchProducts = findProductsInList();
+                    if (searchProducts && searchProducts.length > 0) {
+                        sendEvent('ViewSearchResults', {
+                            search_string: searchTerm,
+                            content_type: 'product_group',
+                            content_ids: searchProducts.map(p => p.id).filter(Boolean),
+                            num_items: searchProducts.length
+                        });
+                    }
+                }, 1000);
+                break;
+                
+            case 'cart':
+                // Evento de visualização do carrinho, apenas se estiver na página de carrinho
+                if (!firedEvents.ViewCart) {
+                    setTimeout(() => {
+                        // Verifica se realmente é uma página de carrinho
+                        if (detectCartPage()) {
+                            triggerViewCart();
+                        }
+                    }, 800);
+                }
+                break;
+        }
+    }
+
+    // Verifica se está realmente em uma página de carrinho
+    function detectCartPage() {
+        // Verifica URL primeiro
+        const path = window.location.pathname;
+        if (path === '/cart' || path === '/carrinho' || path === '/cart/') {
+            return true;
+        }
+        
+        // Verifica body class
+        if (document.body.classList.contains('cart') || 
+            document.body.classList.contains('template-cart')) {
+            return true;
+        }
+        
+        // Verifica elementos específicos de página de carrinho
+        const cartIndicators = [
+            document.querySelector('form[action="/cart"]'),
+            document.querySelector('h1.cart-title, h1:contains("Carrinho"), h1:contains("Cart")'),
+            document.querySelector('.cart-page, .cart-template'),
+            document.querySelector('button[name="checkout"], input[name="checkout"]')
+        ];
+        
+        // Se qualquer um dos indicadores estiver presente
+        return cartIndicators.some(indicator => indicator !== null);
+    }
+
+    // Dispara o evento ViewCart
+    function triggerViewCart() {
+        // Verifica se é realmente uma página de carrinho
+        if (!detectCartPage()) {
+            console.log('Não é uma página de carrinho, ViewCart não será disparado.');
+            return;
+        }
+        
+        console.log('Tentando disparar evento ViewCart...');
+        
+        if (firedEvents.ViewCart) {
+            console.log('ViewCart já foi disparado, ignorando.');
+            return;
+        }
+        
+        // Busca produtos no carrinho
+        const cartProducts = findCartProducts();
+        console.log('Produtos no carrinho:', cartProducts);
+        
+        if (cartProducts.length > 0) {
+            // Calcula o valor total do carrinho
+            let totalValue = findCartTotal();
+            
+            // Se não conseguiu encontrar um total específico, calcula a partir dos produtos
+            if (totalValue === 0) {
+                totalValue = cartProducts.reduce((sum, product) => {
+                    return sum + (product.price * (product.quantity || 1));
+                }, 0);
+            }
+            
+            console.log('Valor total do carrinho:', totalValue);
+            
+            sendEvent('ViewCart', {
+                content_type: 'product_group',
+                content_name: 'Carrinho',
+                content_ids: cartProducts.map(p => p.id).filter(Boolean),
+                value: totalValue,
+                currency: cartProducts[0].currency || 'BRL',
+                num_items: cartProducts.length
+            });
+            
+            firedEvents.ViewCart = true;
+        } else {
+            console.log('Nenhum produto encontrado no carrinho.');
+        }
+    }
+
+    // Função melhorada para encontrar produtos no carrinho
+    function findCartProducts() {
+        // Verificação estrita para garantir que estamos na página de carrinho
+        if (!detectCartPage()) {
+            return [];
+        }
+        
+        // Seletores mais amplos para encontrar itens do carrinho
+        const cartItemSelectors = [
+            // Seletores específicos
+            '[data-cart-item]',
+            '.cart-item',
+            '.cart__item',
+            '.mini-cart-item',
+            // Seletores genéricos de Shopify
+            '.cart table tr:not(:first-child)',
+            '.cart tbody tr',
+            '.cart-row',
+            '.cart-drawer-item',
+            // Seletores de linha de produto em carrinho
+            '[data-line-item]',
+            '[data-cart-line]',
+            // Para temas Ajax Cart
+            '.ajaxcart__row',
+            // Para dropdown de carrinho
+            '.cart-dropdown-item',
+            // Seletores baseados em classe
+            '[class*="cart-item"]',
+            '[class*="cart__item"]',
+            '[class*="cart-product"]'
+        ].join(', ');
+        
+        const cartItems = document.querySelectorAll(cartItemSelectors);
+        console.log(`Itens do carrinho encontrados: ${cartItems.length}`, cartItems);
+        
+        if (cartItems.length === 0) {
+            // Se não encontrar com seletores específicos, tenta uma abordagem mais genérica
+            const possibleCartContainers = document.querySelectorAll('.cart, [class*="cart"], form[action*="/cart"]');
+            
+            for (const container of possibleCartContainers) {
+                // Procura por elementos dentro do contêiner que podem ser itens do carrinho
+                const potentialItems = container.querySelectorAll('tr, li, [class*="item"], [class*="product"]');
+                
+                if (potentialItems.length > 0) {
+                    console.log(`Potenciais itens do carrinho encontrados: ${potentialItems.length}`, potentialItems);
+                    
+                    // Filtra para manter apenas itens que parecem produtos (têm imagem, preço, etc.)
+                    const likelyCartItems = Array.from(potentialItems).filter(item => {
+                        return item.querySelector('img') || 
+                               item.querySelector('[class*="price"]') || 
+                               item.textContent.includes('$') || 
+                               item.textContent.includes('R$');
+                    });
+                    
+                    if (likelyCartItems.length > 0) {
+                        return extractProductsFromElements(likelyCartItems);
+                    }
+                }
+            }
+            
+            return [];
+        }
+        
+        return extractProductsFromElements(cartItems);
+    }
+
+    // Função para encontrar valor total do carrinho
+    function findCartTotal() {
+        const totalSelectors = [
+            '[data-cart-total]',
+            '.cart-total',
+            '.cart__total',
+            '.cart-subtotal',
+            '.cart-subtotal-price',
+            '[class*="total"] [class*="price"]',
+            '.total',
+            '#CartTotal'
+        ];
+        
+        for (const selector of totalSelectors) {
+            const totalElement = document.querySelector(selector);
+            if (totalElement) {
+                const totalText = totalElement.getAttribute('data-cart-total') || 
+                                 totalElement.textContent.trim().replace(/[^\d,.]/g, '').replace(',', '.');
+                return parseFloat(totalText) || 0;
+            }
+        }
+        
+        return 0;
+    }
+
+    // Configura escuta de eventos para adicionar ao carrinho
+    function setupAddToCartListeners() {
+        // Encontra todos os botões de "Adicionar ao Carrinho"
+        const addToCartButtonSelectors = [
+            'button[name="add"]',
+            'input[name="add"]',
+            '[data-add-to-cart]', 
+            '.add-to-cart', 
+            '#add-to-cart', 
+            '.add_to_cart', 
+            'button[type="submit"]:not([name="update"])',
+            '[class*="add-to-cart"]',
+            '[aria-label*="Add to Cart"]',
+            '[aria-label*="Adicionar"]'
+        ];
+        
+        // Para cada seletor, adiciona um evento de clique
+        addToCartButtonSelectors.forEach(selector => {
+            const buttons = document.querySelectorAll(selector);
+            buttons.forEach(button => {
+                button.addEventListener('click', function(event) {
+                    console.log('Clique em botão de adicionar ao carrinho:', this);
+                    
+                    // Evita disparar o evento mais de uma vez
+                    if (firedEvents.AddToCart) return;
+                    
+                    // Encontra informações do produto
+                    const product = findProductInfo();
+                    
+                    // Encontra quantidade
+                    let quantity = 1;
+                    const quantityInput = document.querySelector('input[name="quantity"], [data-quantity]');
+                    if (quantityInput) {
+                        quantity = parseInt(quantityInput.value) || 1;
+                    }
+                    
+                    console.log('Produto para AddToCart:', product, 'Quantidade:', quantity);
+                    
+                    if (product && (product.id || product.name)) {
+                        sendEvent('AddToCart', {
+                            content_type: 'product',
+                            content_name: product.name || 'Produto',
+                            content_ids: [product.id],
+                            value: (product.price || 0) * quantity,
+                            currency: product.currency || 'BRL',
+                            num_items: quantity
+                        });
+                        
+                        firedEvents.AddToCart = true;
+                    }
                 });
             });
-        }
-    });
+        });
+        
+        // Capturar formulários de adição ao carrinho
+        const addToCartForms = document.querySelectorAll('form[action="/cart/add"], form[action*="/cart/add.js"]');
+        addToCartForms.forEach(form => {
+            form.addEventListener('submit', function(event) {
+                console.log('Envio de formulário de adicionar ao carrinho:', this);
+                
+                // Evita disparar o evento mais de uma vez
+                if (firedEvents.AddToCart) return;
+                
+                // Encontra informações do produto
+                const product = findProductInfo();
+                
+                // Encontra quantidade
+                let quantity = 1;
+                const quantityInput = form.querySelector('input[name="quantity"]');
+                if (quantityInput) {
+                    quantity = parseInt(quantityInput.value) || 1;
+                }
+                
+                if (product && (product.id || product.name)) {
+                    sendEvent('AddToCart', {
+                        content_type: 'product',
+                        content_name: product.name || 'Produto',
+                        content_ids: [product.id],
+                        value: (product.price || 0) * quantity,
+                        currency: product.currency || 'BRL',
+                        num_items: quantity
+                    });
+                    
+                    firedEvents.AddToCart = true;
+                }
+            });
+        });
+        
+        // Captação de eventos via delegação para Ajax
+        document.addEventListener('click', function(event) {
+            // Se já disparou o evento, não precisa verificar mais
+            if (firedEvents.AddToCart) return;
+            
+            // Verifica se o clique foi em um botão de adicionar ao carrinho
+            let addToCartButton = null;
+            
+            for (const selector of addToCartButtonSelectors) {
+                if (event.target.matches(selector) || event.target.closest(selector)) {
+                    addToCartButton = event.target.matches(selector) ? event.target : event.target.closest(selector);
+                    break;
+                }
+            }
+            
+            if (addToCartButton) {
+                console.log('Clique em botão de adicionar ao carrinho via delegação:', addToCartButton);
+                
+                // Encontra informações do produto
+                const product = findProductInfo();
+                
+                // Encontra quantidade
+                let quantity = 1;
+                const quantityInput = document.querySelector('input[name="quantity"], [data-quantity]');
+                if (quantityInput) {
+                    quantity = parseInt(quantityInput.value) || 1;
+                }
+                
+                if (product && (product.id || product.name)) {
+                    sendEvent('AddToCart', {
+                        content_type: 'product',
+                        content_name: product.name || 'Produto',
+                        content_ids: [product.id],
+                        value: (product.price || 0) * quantity,
+                        currency: product.currency || 'BRL',
+                        num_items: quantity
+                    });
+                    
+                    firedEvents.AddToCart = true;
+                }
+            }
+        });
+    }
+
+    // Inicialização
+    function init() {
+        console.log('Inicializando rastreamento de eventos...');
+        
+        // Dispara eventos baseados no tipo de página atual
+        triggerPageEvents();
+        
+        // Configura monitoramento específico para carrinho e adição ao carrinho
+        setupAddToCartListeners();
+        
+        // Monitora mudanças de URL para SPA
+        let lastUrl = location.href; 
+        new MutationObserver(() => {
+            const url = location.href;
+            if (url !== lastUrl) {
+                lastUrl = url;
+                console.log('Mudança de URL detectada', url);
+                
+               // Resetar eventos disparados ao mudar de página
+                for (let event in firedEvents) {
+                    firedEvents[event] = false;
+                }
+                
+                // Pequeno atraso para permitir que o DOM seja atualizado
+                setTimeout(() => {
+                    triggerPageEvents();
+                    
+                    // Se mudou para a página do carrinho, dispara ViewCart
+                    if (url.includes('/cart') || url.includes('/carrinho')) {
+                        setTimeout(() => {
+                            triggerViewCart();
+                        }, 500);
+                    }
+                }, 500);
+            }
+        }).observe(document, {subtree: true, childList: true});
+    }
+
+    // Executa a inicialização quando o DOM estiver pronto
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        // O DOM já está carregado
+        init();
+    }
 }
 </script>
 <noscript>
   <img height="1" width="1" style="display:none"
     src="https://www.facebook.com/tr?id=1163339595278098&ev=PageView&noscript=1"/>
 </noscript>
-<!-- End Facebook Pixel Code --> 
+<!-- End Facebook Pixel Code -->
