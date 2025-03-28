@@ -10,13 +10,92 @@ const geoipService = require('./geoip.service');
 const prisma = new PrismaClient();
 
 /**
+ * Validar dados do evento
+ * @param {Object} eventData
+ * @throws {ApiError}
+ */
+const validateEventData = (eventData) => {
+  logger.info('Iniciando validação dos dados do evento');
+  
+  // Validar campos obrigatórios
+  const requiredFields = ['eventName', 'pixelId'];
+  const missingFields = requiredFields.filter(field => !eventData[field]);
+  
+  if (missingFields.length > 0) {
+    logger.error(`Campos obrigatórios ausentes: ${missingFields.join(', ')}`);
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Campos obrigatórios ausentes: ${missingFields.join(', ')}`,
+      true
+    );
+  }
+
+  // Validar formato do pixelId
+  if (!/^\d+$/.test(eventData.pixelId)) {
+    logger.error(`Pixel ID inválido: ${eventData.pixelId}`);
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Pixel ID deve conter apenas números',
+      true
+    );
+  }
+
+  // Validar eventTime
+  if (eventData.eventTime) {
+    const eventTime = parseInt(eventData.eventTime);
+    if (isNaN(eventTime) || eventTime < 0) {
+      logger.error(`Event time inválido: ${eventData.eventTime}`);
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Event time deve ser um timestamp válido',
+        true
+      );
+    }
+  }
+
+  // Validar URL
+  if (eventData.sourceUrl) {
+    try {
+      new URL(eventData.sourceUrl);
+    } catch (error) {
+      logger.error(`URL inválida: ${eventData.sourceUrl}`);
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'URL de origem inválida',
+        true
+      );
+    }
+  }
+
+  // Validar dados de valor
+  if (eventData.value !== undefined) {
+    const value = parseFloat(eventData.value);
+    if (isNaN(value) || value < 0) {
+      logger.error(`Valor inválido: ${eventData.value}`);
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Valor deve ser um número positivo',
+        true
+      );
+    }
+  }
+
+  logger.info('Validação dos dados do evento concluída com sucesso');
+};
+
+/**
  * Criar um novo evento
  * @param {Object} eventData
  * @returns {Promise<Event>}
  */
 const createEvent = async (eventData, clientIp) => {
+  const startTime = Date.now();
   try {
     logger.info('Iniciando processamento de novo evento');
+    logger.info('Dados recebidos:', JSON.stringify(eventData, null, 2));
+
+    // Validar dados do evento
+    validateEventData(eventData);
 
     // Extrair IP do cliente
     const ip = clientIp || eventData.userData?.ip;
@@ -24,6 +103,7 @@ const createEvent = async (eventData, clientIp) => {
 
     // Enriquecer dados com GeoIP
     if (ip) {
+      logger.info('Iniciando enriquecimento com dados GeoIP');
       const geoData = await geoipService.getLocation(ip);
       if (geoData) {
         logger.info(`Dados GeoIP obtidos para IP ${ip}:`);
@@ -33,6 +113,8 @@ const createEvent = async (eventData, clientIp) => {
           ...geoData,
         };
         logger.info('Dados de geolocalização enriquecidos com sucesso');
+      } else {
+        logger.warn(`Nenhum dado de geolocalização encontrado para IP ${ip}`);
       }
     }
 
@@ -40,15 +122,18 @@ const createEvent = async (eventData, clientIp) => {
     if (!eventData.pixelId) {
       eventData.pixelId = config.facebook.pixelId;
       if (!eventData.pixelId) {
+        logger.error('Pixel ID não configurado');
         throw new ApiError(
           httpStatus.BAD_REQUEST,
           'Pixel ID não configurado',
           true
         );
       }
+      logger.info(`Usando Pixel ID padrão: ${eventData.pixelId}`);
     }
 
     // Criar evento no banco de dados
+    logger.info('Iniciando criação do evento no banco de dados');
     const event = await prisma.event.create({
       data: {
         id: uuidv4(),
@@ -62,6 +147,7 @@ const createEvent = async (eventData, clientIp) => {
         currency: eventData.currency,
       },
     });
+    logger.info(`Evento criado no banco de dados com ID: ${event.id}`);
 
     // Enviar evento para o Facebook
     if (eventData.pixelId) {
@@ -70,9 +156,13 @@ const createEvent = async (eventData, clientIp) => {
       logger.info('Evento enviado com sucesso para o Facebook');
     }
 
+    const processingTime = Date.now() - startTime;
+    logger.info(`Processamento do evento concluído em ${processingTime}ms`);
+
     return event;
   } catch (error) {
-    logger.error('Erro ao processar evento:', error);
+    const processingTime = Date.now() - startTime;
+    logger.error(`Erro ao processar evento após ${processingTime}ms:`, error);
     
     // Se for um ApiError, propaga o erro
     if (error instanceof ApiError) {
