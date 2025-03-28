@@ -4,8 +4,7 @@ const { eventService, geoipService } = require('../services');
 const ApiError = require('../utils/ApiError');
 const pick = require('../utils/pick');
 const logger = require('../config/logger');
-const { validateEventData, validateUserData, normalizeLocation } = require('../utils/validators');
-const eventValidation = require('../validations/event.validation');
+const { eventValidation } = require('../validations');
 
 /**
  * Criar novo evento
