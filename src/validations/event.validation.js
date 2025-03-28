@@ -6,6 +6,14 @@ const createEvent = {
     event_name: Joi.string()
       .required()
       .valid(
+        // Eventos de Visualização
+        'PageView',
+        'ViewContent',
+        'ViewItemList',
+        'ViewCategory',
+        'ViewSearchResults',
+        'ViewCart',
+        'ViewHome',
         // Eventos de Checkout
         'InitiateCheckout',
         'StartCheckout',
@@ -25,7 +33,6 @@ const createEvent = {
         'CompleteRegistration',
         'Subscribe',
         'AddToCart',
-        'ViewContent',
         'Search',
         'Contact',
         'AddToWishlist',

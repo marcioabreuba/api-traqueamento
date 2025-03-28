@@ -148,6 +148,52 @@ if (typeof fbq !== 'undefined') {
             });
         }
 
+        // ViewItemList event (lista de produtos)
+        if (window.location.pathname.includes('/produtos') || window.location.pathname.includes('/categoria/')) {
+            const productList = document.querySelectorAll('[data-product-item]');
+            const categoryName = document.querySelector('[data-category-name]')?.textContent;
+            
+            if (productList.length > 0) {
+                sendEvent('ViewItemList', {
+                    content_type: 'product_group',
+                    content_name: categoryName || 'Lista de Produtos',
+                    content_ids: Array.from(productList).map(item => item.getAttribute('data-product-id')),
+                    num_items: productList.length,
+                    content_category: categoryName || 'Produtos'
+                });
+            }
+        }
+
+        // ViewCategory event
+        if (window.location.pathname.includes('/categoria/')) {
+            const categoryName = document.querySelector('[data-category-name]')?.textContent;
+            const categoryId = document.querySelector('[data-category-id]')?.getAttribute('data-category-id');
+            
+            if (categoryName) {
+                sendEvent('ViewCategory', {
+                    content_type: 'product_group',
+                    content_name: categoryName,
+                    content_ids: [categoryId],
+                    content_category: categoryName
+                });
+            }
+        }
+
+        // ViewSearchResults event
+        if (window.location.pathname.includes('/busca')) {
+            const searchTerm = new URLSearchParams(window.location.search).get('q');
+            const searchResults = document.querySelectorAll('[data-search-result]');
+            
+            if (searchTerm && searchResults.length > 0) {
+                sendEvent('ViewSearchResults', {
+                    search_string: searchTerm,
+                    content_type: 'product_group',
+                    content_ids: Array.from(searchResults).map(result => result.getAttribute('data-product-id')),
+                    num_items: searchResults.length
+                });
+            }
+        }
+
         // AddToCart event
         document.addEventListener('addToCart', function(e) {
             const { productId, productName, price, quantity } = e.detail;

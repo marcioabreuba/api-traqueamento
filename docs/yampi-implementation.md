@@ -36,6 +36,45 @@ fbq('track', 'PageView');
 </div>
 ```
 
+### Lista de Produtos
+```liquid
+<div class="products-list">
+  {% for product in products %}
+    <div class="product-item" data-product-item data-product-id="{{ product.id }}">
+      <h2>{{ product.name }}</h2>
+      <span>{{ product.price }}</span>
+    </div>
+  {% endfor %}
+</div>
+```
+
+### Categoria
+```liquid
+<div class="category" data-category-id="{{ category.id }}">
+  <h1 data-category-name="{{ category.name }}">{{ category.name }}</h1>
+  <div class="products-list">
+    {% for product in category.products %}
+      <div class="product-item" data-product-item data-product-id="{{ product.id }}">
+        <h2>{{ product.name }}</h2>
+        <span>{{ product.price }}</span>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+```
+
+### Resultados de Busca
+```liquid
+<div class="search-results">
+  {% for product in search.results %}
+    <div class="search-result" data-search-result data-product-id="{{ product.id }}">
+      <h2>{{ product.name }}</h2>
+      <span>{{ product.price }}</span>
+    </div>
+  {% endfor %}
+</div>
+```
+
 ### Carrinho
 ```liquid
 <div class="cart" data-cart-total="{{ cart.total }}">
@@ -78,18 +117,6 @@ fbq('track', 'PageView');
     {{ order.payment_method }}
   </div>
 </div>
-```
-
-### Busca
-```liquid
-<form data-search-form>
-  <input type="search" name="q">
-  {% for product in search.results %}
-    <div class="search-result" data-search-result data-product-id="{{ product.id }}">
-      <!-- resultado da busca -->
-    </div>
-  {% endfor %}
-</form>
 ```
 
 ## 3. Adicionar Evento AddToCart
