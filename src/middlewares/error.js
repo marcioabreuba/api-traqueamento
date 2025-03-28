@@ -15,12 +15,16 @@ const errorConverter = (err, req, res, next) => {
   next(error);
 };
 
-// eslint-disable-next-line no-unused-vars
 const errorHandler = (err, req, res, next) => {
   let { statusCode, message } = err;
   
   // Garantir que statusCode seja um número válido
   if (!statusCode || !Number.isInteger(statusCode)) {
+    statusCode = httpStatus.INTERNAL_SERVER_ERROR;
+  }
+
+  // Garantir que o statusCode esteja dentro do intervalo válido
+  if (statusCode < 100 || statusCode > 599) {
     statusCode = httpStatus.INTERNAL_SERVER_ERROR;
   }
 

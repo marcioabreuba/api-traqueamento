@@ -3,9 +3,13 @@ const path = require('path');
 const { Reader } = require('@maxmind/geoip2-node');
 const logger = require('../config/logger');
 const config = require('../config/config');
+const maxmind = require('maxmind');
+const ApiError = require('../utils/ApiError');
+const httpStatus = require('http-status');
 
 // Armazenar a instância do reader do MaxMind
 let geoIpReader = null;
+let reader = null;
 
 /**
  * Inicializar o leitor de base GeoIP
@@ -13,24 +17,14 @@ let geoIpReader = null;
 const initialize = async () => {
   try {
     logger.info('Iniciando inicialização do serviço GeoIP');
-    const dbPath = path.resolve(config.geoip.dbPath);
-    
-    // Verificar se o arquivo existe
-    if (!fs.existsSync(dbPath)) {
-      logger.error(`Base de dados GeoIP não encontrada em: ${dbPath}`);
-      return false;
-    }
-    
+    const dbPath = path.join(__dirname, '../../data/GeoLite2-City.mmdb');
     logger.info(`Base de dados GeoIP encontrada em: ${dbPath}`);
     
-    // Inicializar o leitor GeoIP
-    geoIpReader = await Reader.open(dbPath);
+    reader = await maxmind.open(dbPath);
     logger.info('Base de dados GeoIP inicializada com sucesso');
-    return true;
   } catch (error) {
-    logger.error(`Erro ao inicializar base GeoIP: ${error.message}`);
-    logger.error(`Stack trace: ${error.stack}`);
-    return false;
+    logger.error('Erro ao inicializar GeoIP:', error);
+    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Erro ao inicializar serviço GeoIP');
   }
 };
 
@@ -41,63 +35,28 @@ const initialize = async () => {
  */
 const lookupIp = async (ip) => {
   try {
-    logger.debug(`Iniciando lookup para IP: ${ip}`);
+    if (!reader) {
+      logger.warn('Serviço GeoIP não inicializado');
+      return null;
+    }
+
+    // Remover prefixo IPv6 se presente
+    const cleanIp = ip.replace(/^::ffff:/, '');
     
-    // Verificar se o leitor foi inicializado
-    if (!geoIpReader) {
-      logger.error('Base de dados GeoIP não inicializada');
-      return null;
+    try {
+      const result = reader.get(cleanIp);
+      logger.info(`Dados GeoIP obtidos para IP ${cleanIp}:`, result);
+      return result;
+    } catch (error) {
+      if (error.name === 'AddressNotFoundError') {
+        logger.warn(`Nenhum dado GeoIP encontrado para o IP: ${cleanIp}`);
+        return null;
+      }
+      throw error;
     }
-
-    // Validar IP
-    if (!ip || ip === '127.0.0.1' || ip === 'localhost') {
-      logger.warn(`IP inválido ou local: ${ip}`);
-      return null;
-    }
-
-    // Buscar informações do IP
-    logger.debug('Consultando base de dados MaxMind');
-    const result = await geoIpReader.city(ip);
-    
-    if (!result) {
-      logger.warn(`Nenhuma informação encontrada para o IP: ${ip}`);
-      return null;
-    }
-
-    logger.debug('Dados encontrados na base MaxMind');
-
-    const geoData = {
-      country: result.country?.names?.pt || result.country?.names?.en || 'Desconhecido',
-      city: result.city?.names?.pt || result.city?.names?.en || 'Desconhecido',
-      state: result.subdivisions?.[0]?.names?.pt || result.subdivisions?.[0]?.names?.en || 'Desconhecido',
-      latitude: result.location?.latitude || null,
-      longitude: result.location?.longitude || null,
-      timezone: result.location?.timeZone || null,
-      continent: result.continent?.names?.pt || result.continent?.names?.en || 'Desconhecido',
-      postalCode: result.postal?.code || null,
-      accuracy: result.location?.accuracyRadius || null,
-    };
-
-    logger.info(`Dados geográficos obtidos para IP ${ip}:`);
-    logger.info(`- País: ${geoData.country}`);
-    logger.info(`- Cidade: ${geoData.city}`);
-    logger.info(`- Estado: ${geoData.state}`);
-    logger.info(`- Continente: ${geoData.continent}`);
-    if (geoData.latitude && geoData.longitude) {
-      logger.info(`- Coordenadas: ${geoData.latitude}, ${geoData.longitude}`);
-    }
-    if (geoData.timezone) {
-      logger.info(`- Timezone: ${geoData.timezone}`);
-    }
-    if (geoData.accuracy) {
-      logger.info(`- Precisão: ${geoData.accuracy}km`);
-    }
-
-    return geoData;
   } catch (error) {
-    logger.error(`Erro ao buscar informações do IP ${ip}: ${error.message}`);
-    logger.error(`Stack trace: ${error.stack}`);
-    return null;
+    logger.error(`Erro ao buscar informações do IP ${ip}:`, error);
+    return null; // Retorna null em caso de erro para não interromper o fluxo
   }
 };
 
