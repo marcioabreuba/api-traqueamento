@@ -4,6 +4,7 @@ const { eventService, geoipService } = require('../services');
 const ApiError = require('../utils/ApiError');
 const pick = require('../utils/pick');
 const logger = require('../config/logger');
+const { validateEventData, validateUserData, normalizeLocation } = require('../utils/validators');
 
 /**
  * Criar novo evento
@@ -16,30 +17,34 @@ const createEvent = catchAsync(async (req, res) => {
     const clientIp = req.ip || req.connection.remoteAddress;
     logger.info(`IP do cliente extraído: ${clientIp}`);
 
+    // Validar e normalizar dados do evento
+    const eventData = validateEventData(req.body);
+    if (!eventData) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Dados do evento inválidos');
+    }
+
+    // Validar e normalizar dados do usuário
+    if (eventData.user_data) {
+      eventData.user_data = validateUserData(eventData.user_data);
+      if (!eventData.user_data) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Dados do usuário inválidos');
+      }
+    }
+
     // Tentar enriquecer com informações de geolocalização
     try {
       logger.debug('Iniciando busca de dados GeoIP');
       const geoData = await geoipService.lookupIp(clientIp);
-      logger.info(`Dados GeoIP obtidos: ${JSON.stringify(geoData)}`);
       
       if (geoData) {
-        if (!req.body.user_data.city && geoData.city) {
-          req.body.user_data.city = geoData.city;
-          logger.info(`Cidade enriquecida: ${geoData.city}`);
+        const normalizedLocation = normalizeLocation(geoData);
+        if (normalizedLocation) {
+          eventData.user_data = {
+            ...eventData.user_data,
+            ...normalizedLocation
+          };
+          logger.info('Dados de geolocalização enriquecidos com sucesso');
         }
-        if (!req.body.user_data.state && geoData.state) {
-          req.body.user_data.state = geoData.state;
-          logger.info(`Estado enriquecido: ${geoData.state}`);
-        }
-        if (!req.body.user_data.country && geoData.country) {
-          req.body.user_data.country = geoData.country;
-          logger.info(`País enriquecido: ${geoData.country}`);
-        }
-        if (geoData.latitude && geoData.longitude) {
-          logger.debug(`Coordenadas obtidas: ${geoData.latitude}, ${geoData.longitude}`);
-        }
-      } else {
-        logger.warn(`Nenhum dado GeoIP encontrado para o IP: ${clientIp}`);
       }
     } catch (error) {
       logger.error(`Erro ao obter dados de geolocalização: ${error.message}`);
@@ -47,26 +52,20 @@ const createEvent = catchAsync(async (req, res) => {
     }
 
     // Extrair user-agent se não fornecido
-    if (!req.body.user_data?.user_agent && req.headers['user-agent']) {
-      req.body.user_data = req.body.user_data || {};
-      req.body.user_data.user_agent = req.headers['user-agent'];
+    if (!eventData.user_data?.user_agent && req.headers['user-agent']) {
+      eventData.user_data = eventData.user_data || {};
+      eventData.user_data.user_agent = req.headers['user-agent'];
       logger.debug('User-Agent extraído dos headers');
-    }
-
-    // Definir timestamp atual se não fornecido
-    if (!req.body.event_time) {
-      req.body.event_time = Math.floor(Date.now() / 1000);
-      logger.debug(`Timestamp definido: ${req.body.event_time}`);
     }
 
     // Adicionar URL de origem se disponível
     if (req.headers.referer) {
-      req.body.event_source_url = req.headers.referer;
+      eventData.event_source_url = req.headers.referer;
       logger.debug(`URL de origem adicionada: ${req.headers.referer}`);
     }
 
     // Processar o evento
-    const event = await eventService.createEvent(req.body, clientIp);
+    const event = await eventService.createEvent(eventData, clientIp);
     
     // Enviar resposta de sucesso
     res.status(httpStatus.CREATED).json({
