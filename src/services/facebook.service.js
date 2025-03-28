@@ -11,6 +11,8 @@ const config = require('../config/config');
  * @returns {Object} payload formatado para o Facebook
  */
 const formatEventData = (data) => {
+  logger.debug('Iniciando formatação dos dados do evento');
+  
   const {
     eventName,
     eventTime,
@@ -20,6 +22,8 @@ const formatEventData = (data) => {
     eventId = uuidv4(),
   } = data;
 
+  logger.info(`Formatando evento: ${eventName} (ID: ${eventId})`);
+
   // Processar userData
   const formattedUserData = {
     client_ip_address: userData.ip || null,
@@ -27,15 +31,42 @@ const formatEventData = (data) => {
   };
 
   // Adicionar campos condicionalmente se existirem
-  if (userData.email) formattedUserData.em = [userData.email];
-  if (userData.phone) formattedUserData.ph = [userData.phone];
-  if (userData.firstName) formattedUserData.fn = [userData.firstName];
-  if (userData.lastName) formattedUserData.ln = [userData.lastName];
-  if (userData.externalId) formattedUserData.external_id = [userData.externalId];
-  if (userData.city) formattedUserData.ct = [userData.city];
-  if (userData.state) formattedUserData.st = [userData.state];
-  if (userData.zipCode) formattedUserData.zp = [userData.zipCode];
-  if (userData.country) formattedUserData.country = [userData.country];
+  if (userData.email) {
+    formattedUserData.em = [userData.email];
+    logger.debug('Email adicionado aos dados do usuário');
+  }
+  if (userData.phone) {
+    formattedUserData.ph = [userData.phone];
+    logger.debug('Telefone adicionado aos dados do usuário');
+  }
+  if (userData.firstName) {
+    formattedUserData.fn = [userData.firstName];
+    logger.debug('Nome adicionado aos dados do usuário');
+  }
+  if (userData.lastName) {
+    formattedUserData.ln = [userData.lastName];
+    logger.debug('Sobrenome adicionado aos dados do usuário');
+  }
+  if (userData.externalId) {
+    formattedUserData.external_id = [userData.externalId];
+    logger.debug('ID externo adicionado aos dados do usuário');
+  }
+  if (userData.city) {
+    formattedUserData.ct = [userData.city];
+    logger.debug(`Cidade adicionada aos dados do usuário: ${userData.city}`);
+  }
+  if (userData.state) {
+    formattedUserData.st = [userData.state];
+    logger.debug(`Estado adicionado aos dados do usuário: ${userData.state}`);
+  }
+  if (userData.zipCode) {
+    formattedUserData.zp = [userData.zipCode];
+    logger.debug(`CEP adicionado aos dados do usuário: ${userData.zipCode}`);
+  }
+  if (userData.country) {
+    formattedUserData.country = [userData.country];
+    logger.debug(`País adicionado aos dados do usuário: ${userData.country}`);
+  }
 
   // Construir evento
   const event = {
@@ -49,8 +80,10 @@ const formatEventData = (data) => {
   // Adicionar URL de origem, se fornecida
   if (eventSourceUrl) {
     event.event_source_url = eventSourceUrl;
+    logger.debug(`URL de origem adicionada: ${eventSourceUrl}`);
   }
 
+  logger.info('Dados do evento formatados com sucesso');
   return event;
 };
 
@@ -64,6 +97,8 @@ const formatEventData = (data) => {
  */
 const sendEvent = async (pixelId, accessToken, eventData, testCode = null) => {
   try {
+    logger.info(`Iniciando envio de evento para pixel ${pixelId}`);
+    
     const formattedEvent = formatEventData(eventData);
     const apiUrl = `${config.facebook.apiUrl}/${pixelId}/events`;
 
@@ -75,16 +110,24 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode = null) => {
     // Adicionar test_event_code se fornecido
     if (testCode) {
       payload.test_event_code = testCode;
+      logger.debug(`Código de teste adicionado: ${testCode}`);
     }
 
-    logger.info(`Enviando evento para pixel ${pixelId}: ${eventData.eventName}`);
+    logger.info(`Enviando evento ${eventData.eventName} para o Facebook`);
+    logger.debug(`Payload: ${JSON.stringify(payload, null, 2)}`);
+    
     const response = await axios.post(apiUrl, payload);
-
+    
+    logger.info('Evento enviado com sucesso para o Facebook');
+    logger.debug(`Resposta: ${JSON.stringify(response.data, null, 2)}`);
+    
     return response.data;
   } catch (error) {
     logger.error(`Erro ao enviar evento para o Facebook: ${error.message}`);
     if (error.response) {
       logger.error(`Resposta de erro: ${JSON.stringify(error.response.data)}`);
+      logger.error(`Status: ${error.response.status}`);
+      logger.error(`Headers: ${JSON.stringify(error.response.headers)}`);
     }
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Falha ao enviar evento para o Facebook');
   }

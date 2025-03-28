@@ -9,48 +9,75 @@ const logger = require('../config/logger');
  * Criar e enviar um evento
  */
 const createEvent = catchAsync(async (req, res) => {
+  logger.info('Iniciando processamento de novo evento');
+  
   // Extrair e enriquecer dados com informações de IP, se ausentes
   if (!req.body.user_data || !req.body.user_data.ip_address) {
+    logger.info('Dados de usuário ausentes ou sem IP, iniciando enriquecimento');
+    
     if (!req.body.user_data) {
       req.body.user_data = {};
+      logger.debug('Objeto user_data criado');
     }
     
     // Extrair IP do cliente
     const clientIp = geoipService.extractClientIp(req);
+    logger.info(`IP do cliente extraído: ${clientIp}`);
+    
     req.body.user_data.ip_address = clientIp;
     
     // Tentar enriquecer com informações de geolocalização
     try {
-      const geoData = geoipService.lookupIp(clientIp);
+      logger.debug('Iniciando busca de dados GeoIP');
+      const geoData = await geoipService.lookupIp(clientIp);
+      logger.info(`Dados GeoIP obtidos: ${JSON.stringify(geoData)}`);
+      
       if (geoData) {
         if (!req.body.user_data.city && geoData.city) {
           req.body.user_data.city = geoData.city;
+          logger.info(`Cidade enriquecida: ${geoData.city}`);
         }
-        if (!req.body.user_data.state && geoData.region) {
-          req.body.user_data.state = geoData.region;
+        if (!req.body.user_data.state && geoData.state) {
+          req.body.user_data.state = geoData.state;
+          logger.info(`Estado enriquecido: ${geoData.state}`);
         }
         if (!req.body.user_data.country && geoData.country) {
           req.body.user_data.country = geoData.country;
+          logger.info(`País enriquecido: ${geoData.country}`);
         }
+        if (geoData.latitude && geoData.longitude) {
+          logger.debug(`Coordenadas obtidas: ${geoData.latitude}, ${geoData.longitude}`);
+        }
+      } else {
+        logger.warn(`Nenhum dado GeoIP encontrado para o IP: ${clientIp}`);
       }
     } catch (error) {
-      logger.warn(`Erro ao obter dados de geolocalização: ${error.message}`);
+      logger.error(`Erro ao obter dados de geolocalização: ${error.message}`);
+      logger.error(`Stack trace: ${error.stack}`);
     }
+  } else {
+    logger.info('Dados de usuário já contêm IP, pulando enriquecimento GeoIP');
   }
 
   // Extrair user-agent se não fornecido
   if (!req.body.user_data.user_agent && req.headers['user-agent']) {
     req.body.user_data.user_agent = req.headers['user-agent'];
+    logger.debug('User-Agent extraído dos headers');
   }
 
   // Definir timestamp atual se não fornecido
   if (!req.body.event_time) {
     req.body.event_time = Math.floor(Date.now() / 1000);
+    logger.debug(`Timestamp definido: ${req.body.event_time}`);
   }
 
   // Processar e enviar evento
   const domain = req.params.domain || req.query.domain || req.body.domain;
+  logger.info(`Processando evento para domínio: ${domain}`);
+  
   const event = await eventService.processEvent(req.body, domain);
+  logger.info(`Evento processado com sucesso. ID: ${event.id}`);
+  
   res.status(httpStatus.CREATED).send(event);
 });
 
