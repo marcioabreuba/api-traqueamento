@@ -83,6 +83,9 @@ const validateEventData = (eventData) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Dados do evento são obrigatórios');
   }
 
+  logger.info('Iniciando validação dos dados do evento');
+  logger.info('Dados recebidos:', JSON.stringify(eventData, null, 2));
+
   // Validar campos obrigatórios
   if (!eventData.event_name) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'event_name é obrigatório');

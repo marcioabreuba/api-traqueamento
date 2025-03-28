@@ -49,7 +49,7 @@ const errorHandler = (err, req, res, next) => {
     });
   }
 
-  res.status(statusCode).send(response);
+  res.status(statusCode).json(response);
 };
 
 module.exports = {
