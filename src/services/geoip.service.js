@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { Reader } = require('@maxmind/geoip2-node');
 const logger = require('../config/logger');
 const config = require('../config/config');
 const maxmind = require('maxmind');
@@ -8,7 +7,6 @@ const ApiError = require('../utils/ApiError');
 const httpStatus = require('http-status');
 
 // Armazenar a instância do reader do MaxMind
-let geoIpReader = null;
 let reader = null;
 
 /**
@@ -17,14 +15,78 @@ let reader = null;
 const initialize = async () => {
   try {
     logger.info('Iniciando inicialização do serviço GeoIP');
-    const dbPath = path.join(__dirname, '../../data/GeoLite2-City.mmdb');
-    logger.info(`Base de dados GeoIP encontrada em: ${dbPath}`);
     
-    reader = await maxmind.open(dbPath);
-    logger.info('Base de dados GeoIP inicializada com sucesso');
+    // Tentar diferentes caminhos possíveis
+    const possiblePaths = [
+      path.join(process.cwd(), 'data', 'GeoLite2-City.mmdb'),
+      path.join(__dirname, '../../data/GeoLite2-City.mmdb'),
+      'data/GeoLite2-City.mmdb',
+      './data/GeoLite2-City.mmdb'
+    ];
+
+    let dbPath = null;
+    
+    // Encontrar o primeiro caminho válido
+    for (const testPath of possiblePaths) {
+      logger.info(`Tentando caminho: ${testPath}`);
+      if (fs.existsSync(testPath)) {
+        dbPath = testPath;
+        logger.info(`Arquivo encontrado em: ${dbPath}`);
+        break;
+      }
+    }
+
+    if (!dbPath) {
+      logger.error('Nenhum caminho válido encontrado para a base de dados GeoIP');
+      return false;
+    }
+
+    // Verificar permissões
+    try {
+      fs.accessSync(dbPath, fs.constants.R_OK);
+      logger.info('Arquivo tem permissões de leitura');
+    } catch (error) {
+      logger.error(`Erro ao verificar permissões: ${error.message}`);
+      return false;
+    }
+
+    // Verificar tamanho
+    const stats = fs.statSync(dbPath);
+    logger.info(`Tamanho do arquivo: ${stats.size} bytes`);
+    
+    // Tentar inicializar o leitor
+    try {
+      logger.info('Tentando abrir a base de dados GeoIP...');
+      reader = await maxmind.open(dbPath);
+      logger.info('Base de dados GeoIP aberta com sucesso');
+    } catch (error) {
+      logger.error(`Erro ao abrir a base de dados GeoIP: ${error.message}`);
+      return false;
+    }
+    
+    // Verificar se o reader foi inicializado corretamente
+    if (!reader) {
+      logger.error('Falha ao inicializar o leitor MaxMind');
+      return false;
+    }
+    
+    // Testar o leitor com um IP de exemplo
+    try {
+      logger.info('Testando o leitor com IP 8.8.8.8...');
+      const testResult = reader.get('8.8.8.8');
+      if (!testResult) {
+        logger.error('Falha ao testar o leitor MaxMind: resultado nulo');
+        return false;
+      }
+      logger.info('Base de dados GeoIP inicializada e testada com sucesso');
+      return true;
+    } catch (testError) {
+      logger.error('Falha ao testar o leitor MaxMind:', testError);
+      return false;
+    }
   } catch (error) {
     logger.error('Erro ao inicializar GeoIP:', error);
-    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Erro ao inicializar serviço GeoIP');
+    return false;
   }
 };
 
@@ -45,6 +107,10 @@ const lookupIp = async (ip) => {
     
     try {
       const result = reader.get(cleanIp);
+      if (!result) {
+        logger.warn(`Nenhum dado GeoIP encontrado para o IP: ${cleanIp}`);
+        return null;
+      }
       logger.info(`Dados GeoIP obtidos para IP ${cleanIp}:`, result);
       return result;
     } catch (error) {
