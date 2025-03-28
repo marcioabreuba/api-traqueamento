@@ -265,9 +265,10 @@ const createEvent = async (eventData, clientIp) => {
       throw error;
     }
 
-    // Caso contrário, cria um novo ApiError
+    // Caso contrário, cria um novo ApiError com statusCode explícito
+    const fallbackStatusCode = 500; // Definir explicitamente
     throw new ApiError(
-      httpStatus.INTERNAL_SERVER_ERROR,
+      fallbackStatusCode,
       'Erro ao processar evento',
       error.message || 'Erro desconhecido',
       true,
@@ -451,9 +452,10 @@ const processEvent = async (eventData, domainOrPixelId) => {
         }
       });
 
-      // Propagar o erro como ApiError
+      // Propagar o erro como ApiError garantindo que statusCode seja 502 (BAD_GATEWAY)
+      const errorStatusCode = 502; // Definir explicitamente
       throw new ApiError(
-        httpStatus.BAD_GATEWAY,
+        errorStatusCode,
         `Erro ao enviar evento para o Facebook: ${error.message}`,
         'FacebookSendError',
         true,
@@ -469,9 +471,10 @@ const processEvent = async (eventData, domainOrPixelId) => {
       throw error;
     }
 
-    // Caso contrário, cria um novo ApiError
+    // Caso contrário, cria um novo ApiError com statusCode explícito
+    const fallbackStatusCode = 500; // Definir explicitamente
     throw new ApiError(
-      httpStatus.INTERNAL_SERVER_ERROR,
+      fallbackStatusCode,
       'Erro ao processar evento',
       error.message || 'Erro desconhecido',
       true,

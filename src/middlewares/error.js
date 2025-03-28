@@ -37,7 +37,15 @@ const errorConverter = (err, req, res, next) => {
 const errorHandler = (err, req, res, next) => {
   try {
     // A classe ApiError já garante que statusCode é válido
-    const statusCode = err.statusCode || httpStatus.INTERNAL_SERVER_ERROR;
+    let statusCode = 500; // Valor padrão
+    
+    // Verificar se existe statusCode e se é um número válido
+    if (typeof err.statusCode === 'number' && 
+        Number.isInteger(err.statusCode) && 
+        err.statusCode >= 100 && 
+        err.statusCode <= 599) {
+      statusCode = err.statusCode;
+    }
     
     // Garantir que a mensagem seja uma string válida
     const message = (err.message && typeof err.message === 'string') 

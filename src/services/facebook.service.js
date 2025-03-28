@@ -240,8 +240,9 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
 
       // Se for o último retry, propaga o erro
       if (attempt === MAX_RETRIES) {
+        const statusCode = httpStatus.BAD_GATEWAY; // Código 502 para erros em serviços externos
         throw new ApiError(
-          httpStatus.BAD_GATEWAY,
+          statusCode,
           `Erro ao enviar evento para o Facebook após ${MAX_RETRIES} tentativas: ${error.message}`,
           'FacebookApiError',
           true

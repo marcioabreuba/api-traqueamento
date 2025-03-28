@@ -21,7 +21,6 @@ class ApiError extends Error {
         statusCode < 100 || 
         statusCode > 599) {
       this._statusCode = httpStatus.INTERNAL_SERVER_ERROR;
-      console.warn(`ApiError: statusCode inválido (${statusCode}). Usando 500 como fallback.`);
     } else {
       this._statusCode = statusCode;
     }
