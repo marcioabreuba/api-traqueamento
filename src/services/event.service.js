@@ -413,7 +413,7 @@ const processEvent = async (eventData, domainOrPixelId) => {
         userData: savedEvent.userData,
         customData: savedEvent.customData,
         eventId: savedEvent.id,
-        eventSourceUrl: eventToSave.sourceUrl,
+        eventSourceUrl: eventToSave.userData.sourceUrl,
         fbp: eventToSave.userData.fbp,
       };
 
@@ -427,40 +427,55 @@ const processEvent = async (eventData, domainOrPixelId) => {
       );
 
       // Atualizar evento com resposta do Facebook
-      const updatedEvent = await prisma.event.update({
-        where: { id: savedEvent.id },
-        data: {
-          status: 'sent',
-          responseData: fbResponse,
-          fbEventId: fbResponse.events_received?.[0]?.id || null
-        }
-      });
+      try {
+        const updatedEvent = await prisma.event.update({
+          where: { id: savedEvent.id },
+          data: {
+            status: 'sent',
+            responseData: fbResponse || {},
+            fbEventId: fbResponse && fbResponse.events_received 
+              ? fbResponse.events_received[0]?.id || null 
+              : null
+          }
+        });
 
-      const processingTime = Date.now() - startTime;
-      logger.info(`Processamento do evento concluído em ${processingTime}ms`);
+        const processingTime = Date.now() - startTime;
+        logger.info(`Processamento do evento concluído em ${processingTime}ms`);
 
-      return updatedEvent;
+        return updatedEvent;
+      } catch (updateError) {
+        logger.error(`Erro ao atualizar evento no banco: ${updateError.message}`);
+        // Mesmo se falhar a atualização, retornar o evento original
+        // para não propagar erro ao cliente se o envio foi bem sucedido
+        return savedEvent;
+      }
     } catch (error) {
-      // Em caso de falha, atualizar o evento com o erro
+      // Em caso de falha no envio, atualizar o evento com o erro
       logger.error(`Erro ao enviar evento para o Facebook: ${error.message}`);
       
-      const updatedEvent = await prisma.event.update({
-        where: { id: savedEvent.id },
-        data: {
-          status: 'failed',
-          errorMessage: error.message || 'Erro desconhecido ao enviar para Facebook'
-        }
-      });
-
-      // Propagar o erro como ApiError garantindo que statusCode seja 502 (BAD_GATEWAY)
-      const errorStatusCode = 502; // Definir explicitamente
-      throw new ApiError(
-        errorStatusCode,
-        `Erro ao enviar evento para o Facebook: ${error.message}`,
-        'FacebookSendError',
-        true,
-        error.stack
-      );
+      try {
+        const updatedEvent = await prisma.event.update({
+          where: { id: savedEvent.id },
+          data: {
+            status: 'failed',
+            errorMessage: error.message || 'Erro desconhecido ao enviar para Facebook'
+          }
+        });
+        
+        // Propagar o erro como ApiError garantindo que statusCode seja 502 (BAD_GATEWAY)
+        const errorStatusCode = 502; // Definir explicitamente
+        throw new ApiError(
+          errorStatusCode,
+          `Erro ao enviar evento para o Facebook: ${error.message}`,
+          'FacebookSendError',
+          true,
+          error.stack
+        );
+      } catch (updateError) {
+        logger.error(`Erro ao atualizar status de falha no banco: ${updateError.message}`);
+        // Propagar o erro original de qualquer forma
+        throw error;
+      }
     }
   } catch (error) {
     const processingTime = Date.now() - startTime;
@@ -488,4 +503,4 @@ module.exports = {
   getEventById,
   queryEvents,
   processEvent,
-}; 
+};
