@@ -6,6 +6,56 @@ const logger = require('../config/logger');
 const config = require('../config/config');
 
 /**
+ * Log formatado dos dados do evento no estilo do Pixel Helper
+ */
+const logEventDetails = (eventData, pixelId) => {
+  logger.info('\n📊 === FACEBOOK PIXEL EVENT DETAILS === 📊');
+  logger.info('----------------------------------------');
+  logger.info(`🎯 Pixel ID: ${pixelId}`);
+  logger.info(`📝 Event Name: ${eventData.eventName}`);
+  logger.info(`🕒 Event Time: ${new Date(eventData.eventTime * 1000).toISOString()}`);
+  
+  if (eventData.eventSourceUrl) {
+    logger.info(`🔗 Source URL: ${eventData.eventSourceUrl}`);
+  }
+
+  if (eventData.userData) {
+    logger.info('\n👤 USER DATA:');
+    logger.info('------------');
+    if (eventData.userData.email) logger.info(`📧 Email: ${eventData.userData.email}`);
+    if (eventData.userData.phone) logger.info(`📱 Phone: ${eventData.userData.phone}`);
+    if (eventData.userData.firstName) logger.info(`👤 First Name: ${eventData.userData.firstName}`);
+    if (eventData.userData.lastName) logger.info(`👤 Last Name: ${eventData.userData.lastName}`);
+    if (eventData.userData.city) logger.info(`🏙️ City: ${eventData.userData.city}`);
+    if (eventData.userData.state) logger.info(`🗺️ State: ${eventData.userData.state}`);
+    if (eventData.userData.country) logger.info(`🌎 Country: ${eventData.userData.country}`);
+    if (eventData.userData.ip) logger.info(`🌐 IP: ${eventData.userData.ip}`);
+    if (eventData.userData.userAgent) logger.info(`🌐 User Agent: ${eventData.userData.userAgent}`);
+  }
+
+  if (eventData.customData) {
+    logger.info('\n🔧 CUSTOM DATA:');
+    logger.info('-------------');
+    Object.entries(eventData.customData).forEach(([key, value]) => {
+      logger.info(`📎 ${key}: ${value}`);
+    });
+  }
+
+  if (eventData.value || eventData.currency) {
+    logger.info('\n💰 VALUE DATA:');
+    logger.info('------------');
+    if (eventData.value) logger.info(`💵 Value: ${eventData.value}`);
+    if (eventData.currency) logger.info(`💱 Currency: ${eventData.currency}`);
+  }
+
+  logger.info('\n⚙️ CONFIGURATION:');
+  logger.info('---------------');
+  logger.info(`🔑 Test Event Code: ${config.facebook.testEventCode || 'Not configured'}`);
+  logger.info(`📡 API Version: v18.0`);
+  logger.info('----------------------------------------\n');
+};
+
+/**
  * Formato de dados para a Conversions API
  * @param {Object} data
  * @returns {Object} payload formatado para o Facebook
@@ -20,7 +70,11 @@ const formatEventData = (data) => {
     customData = {},
     eventSourceUrl,
     eventId = uuidv4(),
+    pixelId
   } = data;
+
+  // Log detalhado do evento
+  logEventDetails(data, pixelId);
 
   logger.info(`Formatando evento: ${eventName} (ID: ${eventId})`);
 
@@ -76,6 +130,7 @@ const formatEventData = (data) => {
     custom_data: customData,
     event_id: eventId,
     action_source: 'website', // Adicionado para indicar que é server-side
+    pixelId // Adicionando pixelId ao evento
   };
 
   // Adicionar URL de origem, se fornecida
@@ -100,7 +155,9 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode = null) => {
   try {
     logger.info(`Iniciando envio de evento para pixel ${pixelId}`);
     
-    const formattedEvent = formatEventData(eventData);
+    // Adiciona pixelId aos dados do evento
+    const eventDataWithPixel = { ...eventData, pixelId };
+    const formattedEvent = formatEventData(eventDataWithPixel);
     const apiUrl = `${config.facebook.apiUrl}/${pixelId}/events`;
 
     const payload = {

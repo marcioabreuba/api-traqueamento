@@ -1,20 +1,58 @@
 const httpStatus = require('http-status');
+const { v4: uuidv4 } = require('uuid');
+const prisma = require('../client');
 const ApiError = require('../utils/ApiError');
 const logger = require('../config/logger');
-const prisma = require('../models');
-const facebookService = require('./facebook.service');
 const config = require('../config/config');
+const facebookService = require('./facebook.service');
 
 /**
- * Cria um registro de evento
- * @param {Object} eventBody
- * @returns {Promise<Event>}
+ * Criar novo evento
+ * @param {Object} eventData
+ * @returns {Promise<Object>}
  */
-const createEvent = async (eventBody) => {
-  const event = await prisma.event.create({
-    data: eventBody
-  });
-  return event;
+const createEvent = async (eventData, clientIp) => {
+  try {
+    // Adicionar pixelId aos dados do evento
+    const eventWithPixel = {
+      ...eventData,
+      pixelId: config.facebook.pixelId // Adiciona o pixelId do config
+    };
+
+    // Criar evento no banco de dados
+    const event = await prisma.event.create({
+      data: eventWithPixel
+    });
+
+    // Enviar evento para o Facebook
+    await facebookService.sendEvent(
+      config.facebook.pixelId,
+      config.facebook.accessToken,
+      {
+        eventName: event.event_name,
+        eventTime: event.event_time,
+        eventSourceUrl: event.event_source_url,
+        userData: {
+          ...event.user_data,
+          ip: clientIp
+        },
+        customData: event.custom_data,
+        value: event.value,
+        currency: event.currency
+      },
+      config.facebook.testEventCode
+    );
+
+    return event;
+  } catch (error) {
+    logger.error('Erro ao processar evento:', error);
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      'Erro ao processar evento',
+      false,
+      error.stack
+    );
+  }
 };
 
 /**
