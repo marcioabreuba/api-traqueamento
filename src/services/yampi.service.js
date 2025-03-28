@@ -16,15 +16,27 @@ const processWebhook = async (webhookData) => {
       event,
       order,
       customer,
-      store
+      store,
+      payment_method,
+      payment_status,
+      total_value
     } = webhookData;
 
     // Mapear eventos da Yampi para eventos do Facebook
     const eventMapping = {
-      'order.created': 'InitiateCheckout',
+      // Eventos de Checkout
+      'checkout.started': 'InitiateCheckout',
+      'checkout.form_started': 'StartCheckout',
+      'checkout.form_completed': 'RegisterDone',
+      'checkout.shipping_added': 'AddShippingInfo',
+      'checkout.payment_added': 'AddPaymentInfo',
+      'checkout.coupon_added': 'AddCoupon',
+      'order.payment_failed': 'Refused - credit_card',
       'order.paid': 'Purchase',
-      'order.canceled': 'AddToCart',
-      'order.refunded': 'Purchase'
+      'order.paid_pix': 'Purchase - paid_pix',
+      'order.paid_credit_card': 'Purchase - credit_card',
+      'order.paid_billet': 'Purchase - billet',
+      'order.paid_high_ticket': 'Purchase - high_ticket'
     };
 
     const fbEventName = eventMapping[event];
@@ -55,7 +67,9 @@ const processWebhook = async (webhookData) => {
       currency: order?.currency || 'BRL',
       num_items: order?.items?.length,
       order_id: order?.id,
-      store_id: store?.id
+      store_id: store?.id,
+      payment_method: payment_method,
+      payment_status: payment_status
     };
 
     // Criar evento para o Facebook

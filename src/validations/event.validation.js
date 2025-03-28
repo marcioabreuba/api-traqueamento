@@ -6,16 +6,28 @@ const createEvent = {
     event_name: Joi.string()
       .required()
       .valid(
+        // Eventos de Checkout
+        'InitiateCheckout',
+        'StartCheckout',
+        'RegisterDone',
+        'AddShippingInfo',
+        'AddPaymentInfo',
+        'AddCoupon',
+        'Refused - credit_card',
         'Purchase',
+        'Purchase - pix',
+        'Purchase - paid_pix',
+        'Purchase - credit_card',
+        'Purchase - billet',
+        'Purchase - high_ticket',
+        // Outros eventos
         'Lead',
         'CompleteRegistration',
         'Subscribe',
         'AddToCart',
-        'InitiateCheckout',
         'ViewContent',
         'Search',
         'Contact',
-        'AddPaymentInfo',
         'AddToWishlist',
         'CustomizeProduct',
         'Donate',

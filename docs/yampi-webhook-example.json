@@ -1,0 +1,105 @@
+{
+  "event": "checkout.started",
+  "order": {
+    "id": "123456",
+    "total": 199.90,
+    "currency": "BRL",
+    "ip_address": "192.168.1.1",
+    "items": [
+      {
+        "product_id": "789",
+        "name": "Produto Exemplo",
+        "quantity": 1,
+        "price": 199.90
+      }
+    ],
+    "shipping_address": {
+      "city": "São Paulo",
+      "state": "SP",
+      "country": "Brasil",
+      "zip_code": "01001-000"
+    }
+  },
+  "customer": {
+    "id": "456",
+    "email": "cliente@exemplo.com",
+    "phone": "11999999999",
+    "first_name": "João",
+    "last_name": "Silva"
+  },
+  "store": {
+    "id": "789",
+    "domain": "minhaloja.com"
+  },
+  "payment_method": "credit_card",
+  "payment_status": "pending",
+  "total_value": 199.90
+}
+
+// Exemplos de outros eventos:
+// {
+//   "event": "checkout.form_started",
+//   ...
+// }
+
+// {
+//   "event": "checkout.form_completed",
+//   ...
+// }
+
+// {
+//   "event": "checkout.shipping_added",
+//   ...
+// }
+
+// {
+//   "event": "checkout.payment_added",
+//   ...
+// }
+
+// {
+//   "event": "checkout.coupon_added",
+//   "coupon_code": "DESCONTO10",
+//   "discount_value": 19.99,
+//   ...
+// }
+
+// {
+//   "event": "order.payment_failed",
+//   "error_message": "Cartão recusado",
+//   ...
+// }
+
+// {
+//   "event": "order.paid",
+//   "payment_status": "approved",
+//   ...
+// }
+
+// {
+//   "event": "order.paid_pix",
+//   "payment_status": "approved",
+//   "pix_code": "123456789",
+//   ...
+// }
+
+// {
+//   "event": "order.paid_credit_card",
+//   "payment_status": "approved",
+//   "installments": 1,
+//   ...
+// }
+
+// {
+//   "event": "order.paid_billet",
+//   "payment_status": "pending",
+//   "billet_url": "https://exemplo.com/boleto",
+//   ...
+// }
+
+// {
+//   "event": "order.paid_high_ticket",
+//   "payment_status": "approved",
+//   "total_value": 5000.00,
+//   ...
+// } 
