@@ -1,16 +1,17 @@
 {
-  "name": "api-traqueamento",
+  "name": "node-express-boilerplate",
   "version": "1.0.0",
-  "description": "API de rastreamento de eventos",
-  "main": "src/index.js",
+  "description": "A boilerplate for building production-ready RESTful APIs using Node.js, Express, and Mongoose",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0 <19.0.0"
+  },
   "scripts": {
-    "start": "pm2 start ecosystem.config.json --no-daemon",
-    "dev": "cross-env NODE_ENV=development nodemon src/index.js",
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
     "test": "jest",
     "lint": "eslint .",
-    "format": "prettier --write \"**/*.{js,json,md}\"",
-    "security-check": "npm audit",
-    "prepare": "husky install"
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@maxmind/geoip2-node": "^6.0.0",
