@@ -1,0 +1,79 @@
+[1mdiff --git a/src/config/config.js b/src/config/config.js[m
+[1mindex 7190e06..699ad70 100644[m
+[1m--- a/src/config/config.js[m
+[1m+++ b/src/config/config.js[m
+[36m@@ -7,7 +7,7 @@[m [mdotenv.config({ path: path.join(__dirname, '../../.env') });[m
+ const envVarsSchema = Joi.object()[m
+   .keys({[m
+     NODE_ENV: Joi.string().valid('production', 'development', 'test').required(),[m
+[31m-    PORT: Joi.number().default(3000),[m
+[32m+[m[32m    PORT: Joi.number().default(3001),[m
+     DATABASE_URL: Joi.string().required().description('URL de conexão com o banco de dados'),[m
+     JWT_SECRET: Joi.string().required().description('JWT secret key'),[m
+     JWT_ACCESS_EXPIRATION_MINUTES: Joi.number().default(30).description('Tempo de expiração do token JWT em minutos'),[m
+[1mdiff --git a/src/controllers/event.controller.js b/src/controllers/event.controller.js[m
+[1mindex 9f24d41..622abb3 100644[m
+[1m--- a/src/controllers/event.controller.js[m
+[1m+++ b/src/controllers/event.controller.js[m
+[36m@@ -73,7 +73,32 @@[m [mconst createEvent = catchAsync(async (req, res) => {[m
+   }[m
+ });[m
+ [m
+[31m-// ... (getEvent e getEvents permanecem iguais)[m
+[32m+[m[32m/**[m
+[32m+[m[32m * Obter evento específico pelo ID[m
+[32m+[m[32m */[m
+[32m+[m[32mconst getEvent = catchAsync(async (req, res) => {[m
+[32m+[m[32m  const event = await eventService.getEventById(req.params.eventId);[m
+[32m+[m[32m  if (!event) {[m
+[32m+[m[32m    throw new ApiError(httpStatus.NOT_FOUND, 'Evento não encontrado');[m
+[32m+[m[32m  }[m
+[32m+[m[32m  res.status(httpStatus.OK).json({[m
+[32m+[m[32m    success: true,[m
+[32m+[m[32m    data: event[m
+[32m+[m[32m  });[m
+[32m+[m[32m});[m
+[32m+[m
+[32m+[m[32m/**[m
+[32m+[m[32m * Obter lista de eventos com filtros[m
+[32m+[m[32m */[m
+[32m+[m[32mconst getEvents = catchAsync(async (req, res) => {[m
+[32m+[m[32m  const filter = pick(req.query, ['pixelId', 'eventName', 'status']);[m
+[32m+[m[32m  const options = pick(req.query, ['sortBy', 'limit', 'page']);[m
+[32m+[m[32m  const result = await eventService.queryEvents(filter, options);[m
+[32m+[m[32m  res.status(httpStatus.OK).json({[m
+[32m+[m[32m    success: true,[m
+[32m+[m[32m    ...result[m
+[32m+[m[32m  });[m
+[32m+[m[32m});[m
+ [m
+ module.exports = {[m
+   createEvent,[m
+[1mdiff --git a/src/validations/event.validation.js b/src/validations/event.validation.js[m
+[1mindex 6093736..d40bb7a 100644[m
+[1m--- a/src/validations/event.validation.js[m
+[1m+++ b/src/validations/event.validation.js[m
+[36m@@ -50,7 +50,21 @@[m [mconst eventValidation = {[m
+       })[m
+     }).options({ allowUnknown: false }) // Bloqueia campos não mapeados[m
+   },[m
+[31m-  // ... (getEvents e getEvent permanecem iguais)[m
+[32m+[m[32m  getEvents: {[m
+[32m+[m[32m    query: Joi.object().keys({[m
+[32m+[m[32m      pixelId: Joi.string(),[m
+[32m+[m[32m      eventName: Joi.string(),[m
+[32m+[m[32m      status: Joi.string().valid('pending', 'sent', 'failed'),[m
+[32m+[m[32m      sortBy: Joi.string(),[m
+[32m+[m[32m      limit: Joi.number().integer(),[m
+[32m+[m[32m      page: Joi.number().integer(),[m
+[32m+[m[32m    }),[m
+[32m+[m[32m  },[m
+[32m+[m[32m  getEvent: {[m
+[32m+[m[32m    params: Joi.object().keys({[m
+[32m+[m[32m      eventId: Joi.string().required(),[m
+[32m+[m[32m    }),[m
+[32m+[m[32m  },[m
+ };[m
+ [m
+ module.exports = eventValidation;[m
+\ No newline at end of file[m

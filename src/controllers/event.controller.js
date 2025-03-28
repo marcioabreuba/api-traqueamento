@@ -1,6 +1,6 @@
 const httpStatus = require('http-status');
 const catchAsync = require('../utils/catchAsync');
-const { eventService, geoipService } = require('../services');
+const { eventService } = require('../services');
 const ApiError = require('../utils/ApiError');
 const pick = require('../utils/pick');
 const logger = require('../config/logger');
@@ -22,7 +22,7 @@ const createEvent = catchAsync(async (req, res) => {
         logger.error('Erro na validação dos dados:', error);
         throw new ApiError(
           httpStatus.BAD_REQUEST, // Status code primeiro
-          `Erro de validação: ${error.details.map(x => x.message).join(', ')}` // Message depois
+          `Erro de validação: ${error.details.map((x) => x.message).join(', ')}`, // Message depois
         );
       }
     } catch (error) {
@@ -36,10 +36,10 @@ const createEvent = catchAsync(async (req, res) => {
 
     // Processar evento
     const event = await eventService.processEvent(req.body, domain);
-    
+
     return res.status(httpStatus.CREATED).json({
       success: true,
-      data: event
+      data: event,
     });
   } catch (error) {
     logger.error('Erro ao processar evento:', error);
@@ -51,7 +51,7 @@ const createEvent = catchAsync(async (req, res) => {
       return res.status(httpStatus.BAD_REQUEST).json({
         success: false,
         error: error.message,
-        details: error.details || 'Erro na validação dos dados'
+        details: error.details || 'Erro na validação dos dados',
       });
     }
 
@@ -60,7 +60,7 @@ const createEvent = catchAsync(async (req, res) => {
       return res.status(error.statusCode || httpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
         error: error.message,
-        details: error.details || 'Erro interno'
+        details: error.details || 'Erro interno',
       });
     }
 
@@ -68,12 +68,37 @@ const createEvent = catchAsync(async (req, res) => {
     return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: 'Erro interno do servidor ao processar evento',
-      details: error.message || 'Erro desconhecido'
+      details: error.message || 'Erro desconhecido',
     });
   }
 });
 
-// ... (getEvent e getEvents permanecem iguais)
+/**
+ * Obter evento específico pelo ID
+ */
+const getEvent = catchAsync(async (req, res) => {
+  const event = await eventService.getEventById(req.params.eventId);
+  if (!event) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Evento não encontrado');
+  }
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: event,
+  });
+});
+
+/**
+ * Obter lista de eventos com filtros
+ */
+const getEvents = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['pixelId', 'eventName', 'status']);
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await eventService.queryEvents(filter, options);
+  res.status(httpStatus.OK).json({
+    success: true,
+    ...result,
+  });
+});
 
 module.exports = {
   createEvent,
