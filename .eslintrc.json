@@ -6,12 +6,10 @@
   "extends": [
     "airbnb-base",
     "plugin:jest/recommended",
-    "plugin:security/recommended",
     "plugin:prettier/recommended"
   ],
   "plugins": [
     "jest",
-    "security",
     "prettier",
     "import"
   ],
@@ -24,7 +22,6 @@
     "no-underscore-dangle": "off",
     "consistent-return": "off",
     "jest/expect-expect": "off",
-    "security/detect-object-injection": "off",
     "no-restricted-syntax": ["error", "ForInStatement", "LabeledStatement", "WithStatement"]
   }
 }
