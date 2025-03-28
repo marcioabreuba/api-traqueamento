@@ -269,6 +269,7 @@ const createEvent = async (eventData, clientIp) => {
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
       'Erro ao processar evento',
+      error.message || 'Erro desconhecido',
       true,
       error.stack
     );
@@ -452,7 +453,7 @@ const processEvent = async (eventData, domainOrPixelId) => {
 
       // Propagar o erro como ApiError
       throw new ApiError(
-        httpStatus.INTERNAL_SERVER_ERROR,
+        httpStatus.BAD_GATEWAY,
         `Erro ao enviar evento para o Facebook: ${error.message}`,
         'FacebookSendError',
         true,

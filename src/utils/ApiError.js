@@ -13,16 +13,41 @@ class ApiError extends Error {
    * @param {string} stack - Stack trace do erro (opcional)
    */
   constructor(statusCode, message, details = '', isOperational = true, stack = '') {
-    super(message);
+    super(message || 'Erro interno do servidor');
     
-    // Garantir que statusCode sempre seja válido
-    this.statusCode = statusCode && Number.isInteger(statusCode) && statusCode >= 100 && statusCode <= 599 
-      ? statusCode 
-      : httpStatus.INTERNAL_SERVER_ERROR;
+    // Validação explícita do statusCode para garantir que seja um número válido
+    if (typeof statusCode !== 'number' || 
+        !Number.isInteger(statusCode) || 
+        statusCode < 100 || 
+        statusCode > 599) {
+      this._statusCode = httpStatus.INTERNAL_SERVER_ERROR;
+      console.warn(`ApiError: statusCode inválido (${statusCode}). Usando 500 como fallback.`);
+    } else {
+      this._statusCode = statusCode;
+    }
     
-    this.details = details; // Detalhes adicionais do erro
+    // Usar getters e setters para validar o statusCode
+    Object.defineProperty(this, 'statusCode', {
+      get: function() {
+        return this._statusCode;
+      },
+      set: function(code) {
+        if (typeof code !== 'number' || 
+            !Number.isInteger(code) || 
+            code < 100 || 
+            code > 599) {
+          this._statusCode = httpStatus.INTERNAL_SERVER_ERROR;
+        } else {
+          this._statusCode = code;
+        }
+      },
+      enumerable: true
+    });
+    
+    this.details = details || '';
     this.isOperational = isOperational;
     this.timestamp = new Date().toISOString();
+    this.name = this.constructor.name;
     
     if (stack) {
       this.stack = stack;

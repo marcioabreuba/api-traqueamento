@@ -243,6 +243,7 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
         throw new ApiError(
           httpStatus.BAD_GATEWAY,
           `Erro ao enviar evento para o Facebook após ${MAX_RETRIES} tentativas: ${error.message}`,
+          'FacebookApiError',
           true
         );
       }
