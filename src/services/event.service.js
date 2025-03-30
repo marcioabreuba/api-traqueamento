@@ -83,7 +83,7 @@ const getPixelConfig = async (eventData, domain) => {
  */
 const validateEventData = (eventData) => {
   logger.info('Iniciando validação dos dados do evento');
-  
+
   // Garantir que eventData não seja null ou undefined
   if (!eventData) {
     logger.error('Dados do evento ausentes ou inválidos');
@@ -94,10 +94,10 @@ const validateEventData = (eventData) => {
       true
     );
   }
-  
+
   // Log de debug para entender o conteúdo exato
   logger.debug('EventData para validação:', JSON.stringify(eventData, null, 2));
-  
+
   // Validar campos obrigatórios
   const requiredFields = ['event_name'];
   const missingFields = requiredFields.filter(field => {
@@ -105,7 +105,7 @@ const validateEventData = (eventData) => {
     // Verificar se o campo está ausente ou vazio
     return value === undefined || value === null || value === '';
   });
-  
+
   if (missingFields.length > 0) {
     logger.error(`Campos obrigatórios ausentes: ${missingFields.join(', ')}`);
     logger.debug(`Valor do event_name recebido: ${JSON.stringify(eventData.event_name)}`);
@@ -208,7 +208,7 @@ const createEvent = async (eventData, clientIp) => {
       if (geoData) {
         logger.info(`Dados GeoIP obtidos para IP ${ip}:`);
         logger.info(JSON.stringify(geoData, null, 2));
-        
+
         // Criar uma cópia completa do eventData em vez de modificar diretamente
         const enrichedEventData = {
           ...eventData,
@@ -217,7 +217,7 @@ const createEvent = async (eventData, clientIp) => {
             ...geoData
           }
         };
-        
+
         // Substituir eventData pela versão enriquecida
         return processEventWithGeoData(enrichedEventData, eventData.pixelId);
       } else {
@@ -270,7 +270,7 @@ const createEvent = async (eventData, clientIp) => {
   } catch (error) {
     const processingTime = Date.now() - startTime;
     logger.error(`Erro ao processar evento após ${processingTime}ms:`, error);
-    
+
     // Se for um ApiError, propaga o erro
     if (error instanceof ApiError) {
       throw error;
@@ -349,7 +349,7 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
   const startTime = Date.now();
   // Criar variável para armazenar o evento salvo
   let savedEvent = null;
-  
+
   try {
     logger.info('Continuando processamento com dados GeoIP');
 
@@ -360,7 +360,7 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
     // Extrair campos principais com fallback para valores padrão
     const eventName = eventData.event_name;
     const eventTime = eventData.event_time || Math.floor(Date.now() / 1000);
-    
+
     // Preparar dados do evento com valores padrão onde necessário
     const eventToSave = {
       pixelId: pixelConfig.pixelId,
@@ -378,8 +378,8 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         state: eventData.user_data && eventData.user_data.state || '',
         country: eventData.user_data && eventData.user_data.country || '',
         zipCode: eventData.user_data && eventData.user_data.zip_code || '',
-        fbp: ((eventData.user_data && eventData.user_data.fbp !== null) ? eventData.user_data.fbp : '') || 
-             ((eventData.fbp !== null) ? eventData.fbp : '') || '',
+        fbp: ((eventData.user_data && eventData.user_data.fbp !== null) ? eventData.user_data.fbp : '') ||
+          ((eventData.fbp !== null) ? eventData.fbp : '') || '',
         sourceUrl: eventData.event_source_url || '',
         referrer: eventData.referrer || '',
         domain: domainOrPixelId || '',
@@ -433,23 +433,24 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         // Verificar e preparar os dados antes de atualizar
         let fbEventId = null;
         let responseDataToSave = {};
-        
+
         // Verificar se a resposta do Facebook é válida
         if (fbResponse) {
           responseDataToSave = typeof fbResponse === 'object' ? fbResponse : { response: fbResponse };
-          
+
           // Tratar o ID do evento extraído da resposta
-          if (fbResponse.events_received && 
-              Array.isArray(fbResponse.events_received) && 
-              fbResponse.events_received.length > 0 &&
-              fbResponse.events_received[0]) {
+          if (fbResponse.events_received &&
+            Array.isArray(fbResponse.events_received) &&
+            fbResponse.events_received.length > 0 &&
+            fbResponse.events_received[0]) {
             fbEventId = fbResponse.events_received[0].id || null;
           }
         }
-        
+
         logger.info(`Atualizando evento ${savedEvent.id} com status 'sent'`);
-        
+
         // Atualizar o evento no banco de dados
+        console.log('fbEventId', fbEventId);
         const updatedEvent = await prisma.event.update({
           where: { id: savedEvent.id },
           data: {
@@ -459,6 +460,7 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
             updatedAt: new Date() // Garantir que o timestamp de atualização é correto
           }
         });
+        
 
         const processingTime = Date.now() - startTime;
         logger.info(`Processamento do evento concluído em ${processingTime}ms`);
@@ -468,28 +470,28 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
       } catch (updateError) {
         logger.error(`Erro ao atualizar evento no banco: ${updateError.message}`);
         logger.error(`Stack trace: ${updateError.stack}`);
-        
+
         // Mesmo com falha na atualização, consideramos que o evento foi enviado com sucesso
         // então retornamos o evento original para não propagar erro ao cliente
         logger.info('Retornando evento original pois o envio para o Facebook foi bem sucedido');
-        
+
         // Atualizar apenas o objeto em memória para manter a consistência na resposta
         savedEvent.status = 'sent_not_updated';
         savedEvent.responseData = fbResponse || {};
-        
+
         return savedEvent;
       }
     } catch (sendError) {
       // Em caso de falha no envio, atualizar o evento com o erro
       logger.error(`Erro ao enviar evento para o Facebook: ${sendError.message}`);
-      
+
       // Garantir que sempre temos uma mensagem de erro
       const errorMessage = sendError.message || 'Erro desconhecido ao enviar para Facebook';
-      
+
       try {
         // Atualizar o status do evento para 'failed'
         logger.info(`Atualizando evento ${savedEvent.id} com status 'failed'`);
-        
+
         await prisma.event.update({
           where: { id: savedEvent.id },
           data: {
@@ -498,24 +500,24 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
             updatedAt: new Date()
           }
         });
-        
+
         // Depois de atualizar com sucesso, propagar o erro com um status code apropriado
         // para que o cliente seja informado corretamente
         let statusCode = httpStatus.BAD_GATEWAY; // 502 como padrão para falhas de comunicação externa
-        
+
         // Se o erro original tiver um código de status válido, usá-lo
-        if (sendError.statusCode && 
-            Number.isInteger(sendError.statusCode) && 
-            sendError.statusCode >= 100 && 
-            sendError.statusCode <= 599) {
+        if (sendError.statusCode &&
+          Number.isInteger(sendError.statusCode) &&
+          sendError.statusCode >= 100 &&
+          sendError.statusCode <= 599) {
           statusCode = sendError.statusCode;
         } else if (sendError.response && sendError.response.status) {
           // Para erros do Axios
           statusCode = sendError.response.status;
         }
-        
+
         logger.error(`Propagando erro com status code ${statusCode}`);
-        
+
         // Criar um novo ApiError para garantir consistência
         throw new ApiError(
           statusCode,
@@ -528,22 +530,22 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         // Se falhar ao atualizar o evento no banco
         logger.error(`Erro ao atualizar status de falha no banco: ${updateError.message}`);
         logger.error(`Stack trace do erro de atualização: ${updateError.stack}`);
-        
+
         // Criar um novo ApiError combinando os dois erros para fornecer mais contexto
         const combinedMessage = `Falha ao enviar para Facebook: ${errorMessage}. Erro adicional ao atualizar status: ${updateError.message}`;
         logger.error(combinedMessage);
-        
+
         // Definir um status code válido
         let statusCode = httpStatus.INTERNAL_SERVER_ERROR;
-        
-        if (sendError instanceof ApiError && 
-            sendError.statusCode && 
-            Number.isInteger(sendError.statusCode) && 
-            sendError.statusCode >= 100 && 
-            sendError.statusCode <= 599) {
+
+        if (sendError instanceof ApiError &&
+          sendError.statusCode &&
+          Number.isInteger(sendError.statusCode) &&
+          sendError.statusCode >= 100 &&
+          sendError.statusCode <= 599) {
           statusCode = sendError.statusCode;
         }
-        
+
         throw new ApiError(
           statusCode,
           combinedMessage,
@@ -555,27 +557,27 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
     }
   } catch (originalError) {
     const processingTime = Date.now() - startTime;
-    
+
     // Garantir que temos sempre um objeto de erro válido
     let error = originalError;
-    
+
     if (!error) {
       error = new Error('Erro desconhecido durante processamento do evento');
     }
-    
+
     if (typeof error === 'string') {
       error = new Error(error);
     }
-    
+
     const errorMessage = error.message || 'Erro desconhecido';
     logger.error(`Erro ao processar evento após ${processingTime}ms: ${errorMessage}`);
     logger.error(`Stack trace: ${error.stack || 'Sem stack trace disponível'}`);
-    
+
     try {
       // Se tivermos o savedEvent, atualizar seu status para 'error'
       if (savedEvent) {
         logger.info(`Atualizando evento ${savedEvent.id} com status 'error'`);
-        
+
         await prisma.event.update({
           where: { id: savedEvent.id },
           data: {
@@ -584,16 +586,16 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
             updatedAt: new Date()
           }
         });
-        
+
         logger.info(`Status do evento ${savedEvent.id} atualizado para 'error'`);
       }
     } catch (updateError) {
       logger.error(`Falha ao atualizar status do evento para 'error': ${updateError.message}`);
     }
-    
+
     // Tentar obter um código de status válido
     let statusCode = httpStatus.INTERNAL_SERVER_ERROR; // 500 como padrão
-    
+
     if (error instanceof ApiError && error.statusCode) {
       // Verificar se o statusCode é válido
       if (Number.isInteger(error.statusCode) && error.statusCode >= 100 && error.statusCode <= 599) {
@@ -607,9 +609,9 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         statusCode = error.response.status;
       }
     }
-    
+
     logger.error(`Erro será propagado com status code ${statusCode}`);
-    
+
     // Se for um ApiError, atualizar o statusCode e propagar
     if (error instanceof ApiError) {
       // Criar um novo ApiError em vez de modificar o original
@@ -657,7 +659,7 @@ const processEvent = async (eventDataInput, domainOrPixelId) => {
         true
       );
     }
-    
+
     // Trabalhar com uma cópia do objeto para evitar mutação
     const eventData = { ...eventDataInput };
 
@@ -665,8 +667,8 @@ const processEvent = async (eventDataInput, domainOrPixelId) => {
     validateEventData(eventData);
 
     // Extrair IP do cliente
-    const ip = (eventData.userData && eventData.userData.ip) || 
-               (eventData.user_data && eventData.user_data.ip_address);
+    const ip = (eventData.userData && eventData.userData.ip) ||
+      (eventData.user_data && eventData.user_data.ip_address);
     logger.info(`IP do cliente extraído: ${ip || 'não disponível'}`);
 
     // Enriquecer dados com GeoIP
@@ -676,7 +678,7 @@ const processEvent = async (eventDataInput, domainOrPixelId) => {
       if (geoData) {
         logger.info(`Dados GeoIP obtidos para IP ${ip}:`);
         logger.info(JSON.stringify(geoData, null, 2));
-        
+
         // Criar uma cópia completa do eventData com os dados de geolocalização
         const enrichedEventData = {
           ...eventData,
@@ -685,39 +687,39 @@ const processEvent = async (eventDataInput, domainOrPixelId) => {
             ...geoData
           }
         };
-        
+
         logger.info('Dados de geolocalização enriquecidos com sucesso');
-        
+
         // Continuar processamento com dados enriquecidos
         return processData(enrichedEventData, domainOrPixelId);
       } else {
         logger.warn(`Nenhum dado de geolocalização encontrado para IP ${ip}`);
       }
     }
-    
+
     // Se não houver enriquecimento com GeoIP, continuar o processamento normal
     return processData(eventData, domainOrPixelId);
   } catch (originalError) {
     const processingTime = Date.now() - startTime;
-    
+
     // Garantir que temos sempre um objeto de erro válido
     let error = originalError;
-    
+
     if (!error) {
       error = new Error('Erro desconhecido durante processamento do evento');
     }
-    
+
     if (typeof error === 'string') {
       error = new Error(error);
     }
-    
+
     const errorMessage = error.message || 'Erro desconhecido';
     logger.error(`Erro inicial ao processar evento após ${processingTime}ms: ${errorMessage}`);
     logger.error(`Stack trace inicial: ${error.stack || 'Sem stack trace disponível'}`);
-    
+
     // Tentar obter um código de status válido
     let statusCode = httpStatus.INTERNAL_SERVER_ERROR; // 500 como padrão
-    
+
     if (error instanceof ApiError && error.statusCode) {
       // Verificar se o statusCode é válido
       if (Number.isInteger(error.statusCode) && error.statusCode >= 100 && error.statusCode <= 599) {
@@ -731,9 +733,9 @@ const processEvent = async (eventDataInput, domainOrPixelId) => {
         statusCode = error.response.status;
       }
     }
-    
+
     logger.error(`Erro inicial será propagado com status code ${statusCode}`);
-    
+
     // Caso seja um ApiError, criar uma cópia com statusCode correto
     if (error instanceof ApiError) {
       throw new ApiError(
