@@ -435,6 +435,7 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         let responseDataToSave = {};
 
         // Verificar se a resposta do Facebook é válida
+        console.log('fbResponse', fbResponse);
         if (fbResponse) {
           responseDataToSave = typeof fbResponse === 'object' ? fbResponse : { response: fbResponse };
 
