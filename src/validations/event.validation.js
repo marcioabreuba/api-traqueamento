@@ -56,6 +56,20 @@ const eventValidation = {
           'string.base': 'O content_name deve ser uma string',
         }),
 
+        // Adicionando os campos que estavam causando erro
+        content_ids: Joi.array().items(Joi.string()).messages({
+          'array.base': 'Os IDs de conteúdo devem ser um array',
+        }),
+        
+        value: Joi.number().min(0).messages({
+          'number.base': 'O valor deve ser um número',
+          'number.min': 'O valor deve ser um número positivo',
+        }),
+        
+        currency: Joi.string().allow('').messages({
+          'string.base': 'A moeda deve ser uma string',
+        }),
+
         // Outros campos ajustados
         pixel_id: Joi.string().pattern(/^\d+$/).messages({
           'string.pattern.base': 'O ID do pixel deve conter apenas números',
