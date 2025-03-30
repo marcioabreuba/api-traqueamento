@@ -452,14 +452,11 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
           data: {
             status: 'sent',
             responseData: responseDataToSave,
-            fbEventId: fbEventId,
-            updatedAt: new Date() // Garantir que o timestamp de atualização é correto
+            fbEventId,
           }
         });
         
 
-        const processingTime = Date.now() - startTime;
-        logger.info(`Processamento do evento concluído em ${processingTime}ms`);
 
         // Retornar o evento atualizado
         return updatedEvent;
