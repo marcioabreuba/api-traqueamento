@@ -440,12 +440,7 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
           responseDataToSave = typeof fbResponse === 'object' ? fbResponse : { response: fbResponse };
 
           // Tratar o ID do evento extraído da resposta
-          if (fbResponse.events_received &&
-            Array.isArray(fbResponse.events_received) &&
-            fbResponse.events_received.length > 0 &&
-            fbResponse.events_received[0]) {
-            fbEventId = fbResponse.events_received[0].id || null;
-          }
+            fbEventId = fbResponse.fbtrace_id;
         }
 
         logger.info(`Atualizando evento ${savedEvent.id} com status 'sent'`);
