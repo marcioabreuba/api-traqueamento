@@ -60,10 +60,7 @@ const createEvent = catchAsync(async (req, res) => {
     // Processar evento
     const event = await eventService.processEvent(req.body, domain);
     console.log('event', event);
-    res.status(httpStatus.CREATED).json({
-      success: true,
-      data: event,
-    });
+    res.send();
   } catch (originalError) {
     // Garantir que sempre temos um erro com objeto e mensagem
     let error = originalError;
