@@ -23,7 +23,7 @@ const createEvent = catchAsync(async (req, res) => {
     try {
       const { error } = eventValidation.createEvent.body.validate(req.body, {
         allowUnknown: false,
-        abortEarly: false,
+        abortEarly: false
       });
 
       if (error) {
@@ -37,7 +37,7 @@ const createEvent = catchAsync(async (req, res) => {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
           `Erro de validação: ${error.message}`,
-          error.details || 'Erro na validação de dados',
+          error.details || 'Erro na validação de dados'
         );
       }
       throw error;
@@ -53,7 +53,7 @@ const createEvent = catchAsync(async (req, res) => {
     
     res.status(httpStatus.CREATED).json({
       success: true,
-      data: event,
+      data: event
     });
   } catch (originalError) {
     // Garantir que sempre temos um erro com objeto e mensagem
@@ -74,14 +74,19 @@ const createEvent = catchAsync(async (req, res) => {
     // Garantir que statusCode sempre é um valor válido
     let statusCode = httpStatus.INTERNAL_SERVER_ERROR; // 500 como padrão
 
-    if (error.statusCode) {
-      if (Number.isInteger(error.statusCode) && error.statusCode >= 100 && error.statusCode <= 599) {
-        statusCode = error.statusCode;
-      } else {
+    try {
+      if (error.statusCode && 
+          Number.isInteger(parseInt(error.statusCode, 10)) && 
+          parseInt(error.statusCode, 10) >= 100 && 
+          parseInt(error.statusCode, 10) <= 599) {
+        statusCode = parseInt(error.statusCode, 10);
+      } else if (error.statusCode) {
         logger.error(`Status code inválido: ${error.statusCode}, usando 500 como fallback`);
+      } else {
+        logger.error('Status code não definido, usando 500');
       }
-    } else {
-      logger.error('Status code não definido, usando 500');
+    } catch (statusErr) {
+      logger.error(`Erro ao processar status code: ${statusErr.message}`);
     }
 
     // Sempre definir um statusCode válido no objeto de erro
@@ -96,7 +101,7 @@ const createEvent = catchAsync(async (req, res) => {
         success: false,
         error: errorMessage,
         details: error.details || 'Erro na validação dos dados',
-        code: httpStatus.BAD_REQUEST,
+        code: httpStatus.BAD_REQUEST
       });
     }
 
@@ -104,23 +109,44 @@ const createEvent = catchAsync(async (req, res) => {
     if (error instanceof ApiError) {
       logger.error(`Erro detalhado [${statusCode}]: ${errorMessage}`);
 
-      return res.status(statusCode).json({
-        success: false,
-        error: errorMessage,
-        details: error.details || 'Erro interno',
-        code: statusCode,
-      });
+      // Garantir que o status é um número válido para resposta HTTP
+      try {
+        return res.status(statusCode).json({
+          success: false,
+          error: errorMessage,
+          details: error.details || 'Erro interno',
+          code: statusCode
+        });
+      } catch (resErr) {
+        logger.error(`Erro ao enviar resposta com status ${statusCode}: ${resErr.message}`);
+        return res.status(500).json({
+          success: false,
+          error: errorMessage,
+          details: 'Erro ao processar status HTTP',
+          code: 500
+        });
+      }
     }
 
     // Fallback para erros não tratados
     logger.error(`Erro detalhado [${statusCode}]: ${errorMessage}`);
 
-    return res.status(statusCode).json({
-      success: false,
-      error: 'Erro interno do servidor ao processar evento',
-      details: errorMessage,
-      code: statusCode,
-    });
+    try {
+      return res.status(statusCode).json({
+        success: false,
+        error: 'Erro interno do servidor ao processar evento',
+        details: errorMessage,
+        code: statusCode
+      });
+    } catch (resErr) {
+      logger.error(`Erro ao enviar resposta com status ${statusCode}: ${resErr.message}`);
+      return res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor',
+        details: errorMessage,
+        code: 500
+      });
+    }
   }
 });
 
@@ -134,7 +160,7 @@ const getEvent = catchAsync(async (req, res) => {
   }
   res.status(httpStatus.OK).json({
     success: true,
-    data: event,
+    data: event
   });
 });
 
@@ -147,12 +173,12 @@ const getEvents = catchAsync(async (req, res) => {
   const result = await eventService.queryEvents(filter, options);
   res.status(httpStatus.OK).json({
     success: true,
-    ...result,
+    ...result
   });
 });
 
 module.exports = {
   createEvent,
   getEvent,
-  getEvents,
+  getEvents
 };

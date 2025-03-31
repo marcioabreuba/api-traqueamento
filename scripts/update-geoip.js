@@ -42,29 +42,59 @@ const downloadUrl = `https://download.maxmind.com/app/geoip_download?edition_id=
 
 console.log('Iniciando download da base de dados GeoIP...');
 
+// Função para seguir redirecionamentos
+const followRedirects = (url, redirectCount = 0) => {
+  return new Promise((resolve, reject) => {
+    if (redirectCount > 5) {
+      reject(new Error('Número máximo de redirecionamentos excedido'));
+      return;
+    }
+
+    // Determinar o protocolo baseado na URL
+    const httpModule = url.startsWith('https:') ? require('https') : require('http');
+    
+    console.log(`Tentando download de: ${url}`);
+    
+    httpModule.get(url, (response) => {
+      // Se for um redirecionamento (3xx)
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        const redirectUrl = new URL(response.headers.location, url).toString();
+        console.log(`Redirecionado para: ${redirectUrl}`);
+        followRedirects(redirectUrl, redirectCount + 1).then(resolve).catch(reject);
+      } else if (response.statusCode !== 200) {
+        reject(new Error(`Falha no download, status: ${response.statusCode}`));
+      } else {
+        resolve(response);
+      }
+    }).on('error', reject);
+  });
+};
+
 // Fazer o download do arquivo
 const downloadFile = () => {
   return new Promise((resolve, reject) => {
     const tempFile = path.join(TARGET_DIR, 'temp-geoip.tar.gz');
     const fileStream = fs.createWriteStream(tempFile);
 
-    https.get(downloadUrl, (response) => {
-      if (response.statusCode !== 200) {
-        reject(new Error(`Falha no download, status: ${response.statusCode}`));
-        return;
-      }
+    followRedirects(downloadUrl)
+      .then((response) => {
+        response.pipe(fileStream);
 
-      response.pipe(fileStream);
+        fileStream.on('finish', () => {
+          fileStream.close();
+          console.log(`Download concluído: ${tempFile}`);
+          resolve(tempFile);
+        });
 
-      fileStream.on('finish', () => {
-        fileStream.close();
-        console.log(`Download concluído: ${tempFile}`);
-        resolve(tempFile);
+        fileStream.on('error', (err) => {
+          fs.unlink(tempFile, () => {});
+          reject(err);
+        });
+      })
+      .catch((err) => {
+        fs.unlink(tempFile, () => {});
+        reject(err);
       });
-    }).on('error', (err) => {
-      fs.unlink(tempFile, () => {});
-      reject(err);
-    });
   });
 };
 
