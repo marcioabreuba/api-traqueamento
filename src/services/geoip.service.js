@@ -2,9 +2,23 @@ const fs = require('fs');
 const path = require('path');
 const maxmind = require('maxmind');
 const logger = require('../config/logger');
+const NodeCache = require('node-cache');
+const https = require('https');
+const { promisify } = require('util');
+const writeFile = promisify(fs.writeFile);
+const readFile = promisify(fs.readFile);
 
 // Armazenar a instância do reader do MaxMind
 let reader = null;
+const cache = new NodeCache({ stdTTL: 3600 }); // Cache por 1 hora
+
+// Configurações de atualização
+const UPDATE_INTERVAL = 24 * 60 * 60 * 1000; // 24 horas
+const DB_PATH = path.join(process.cwd(), 'data', 'GeoLite2-City.mmdb');
+const LICENSE_KEY = process.env.MAXMIND_LICENSE_KEY;
+const DB_URL = `https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=${LICENSE_KEY}&suffix=tar.gz`;
+
+let lastUpdate = null;
 
 /**
  * Validar formato do IP
@@ -152,39 +166,61 @@ const initialize = async () => {
  */
 const getLocation = async (ip) => {
   try {
-    if (!reader) {
-      logger.error('Leitor GeoIP não inicializado');
-      return null;
-    }
-
-    const cleanIp = cleanAndValidateIp(ip);
-    if (!cleanIp) {
+    if (!isValidIp(ip)) {
       logger.warn(`IP inválido ou não fornecido: ${ip}`);
       return null;
     }
-    const result = reader.get(cleanIp);
+
+    // Verificar cache
+    const cachedResult = cache.get(ip);
+    if (cachedResult) {
+      logger.info(`Dados encontrados em cache para IP: ${ip}`);
+      return cachedResult;
+    }
+
+    logger.info(`Buscando localização para IP: ${ip}`);
+    const result = reader.get(ip);
+
     if (!result) {
-      logger.warn(`Nenhum resultado encontrado para o IP: ${cleanIp}`);
+      logger.warn(`Nenhum dado encontrado para IP: ${ip}`);
       return null;
     }
 
-    const locationData = {
-      country: (result.country && result.country.names && result.country.names.en) || null,
-      city: (result.city && result.city.names && result.city.names.en) || null,
+    // Extrair dados com tratamento de precisão
+    const location = {
+      country: (result.country && result.country.names && result.country.names.en) || '',
+      city: (result.city && result.city.names && result.city.names.en) || '',
+      subdivision: (result.subdivisions && result.subdivisions[0] && result.subdivisions[0].names && result.subdivisions[0].names.en) || '',
+      postal: (result.postal && result.postal.code) || '',
       latitude: (result.location && result.location.latitude) || null,
       longitude: (result.location && result.location.longitude) || null,
-      timezone: (result.location && result.location.time_zone) || null,
-      continent: (result.continent && result.continent.names && result.continent.names.en) || null,
-      postal: (result.postal && result.postal.code) || null,
-      subdivision:
-        (result.subdivisions && result.subdivisions[0] && result.subdivisions[0].names && result.subdivisions[0].names.en) ||
-        null
+      accuracy_radius: (result.location && result.location.accuracy_radius) || null,
+      timezone: (result.location && result.location.time_zone) || '',
+      continent: (result.continent && result.continent.names && result.continent.names.en) || '',
+      registered_country: (result.registered_country && result.registered_country.names && result.registered_country.names.en) || '',
+      represented_country: (result.represented_country && result.represented_country.names && result.represented_country.names.en) || '',
+      is_anonymous_proxy: (result.traits && result.traits.is_anonymous_proxy) || false,
+      is_satellite_provider: (result.traits && result.traits.is_satellite_provider) || false,
+      connection_type: (result.connection && result.connection.connection_type) || '',
+      isp: (result.traits && result.traits.isp) || '',
+      organization: (result.traits && result.traits.organization) || '',
+      asn: (result.traits && result.traits.autonomous_system_number) || '',
+      asn_organization: (result.traits && result.traits.autonomous_system_organization) || '',
+      domain: (result.traits && result.traits.domain) || '',
+      last_updated: new Date().toISOString()
     };
 
-    logger.info(`Dados de localização obtidos para IP ${cleanIp}:`, locationData);
-    return locationData;
+    // Adicionar aviso se precisão for baixa
+    if (location.accuracy_radius && location.accuracy_radius > 100) {
+      logger.warn(`Baixa precisão para IP ${ip}: raio de ${location.accuracy_radius}km`);
+    }
+
+    // Salvar no cache
+    cache.set(ip, location);
+    logger.info('Dados de localização obtidos e salvos em cache:', location);
+    return location;
   } catch (error) {
-    logger.error(`Erro ao obter localização para IP ${ip}:`, error);
+    logger.error(`Erro ao buscar localização para IP ${ip}:`, error);
     return null;
   }
 };
@@ -317,6 +353,84 @@ const extractClientIp = (req) => {
   logger.warn('Não foi possível extrair um IP válido do cliente');
   return null;
 };
+
+/**
+ * Verificar e atualizar banco de dados se necessário
+ */
+const checkAndUpdateDatabase = async () => {
+  try {
+    // Verificar se o arquivo existe
+    if (!fs.existsSync(DB_PATH)) {
+      logger.info('Banco de dados não encontrado, iniciando download...');
+      await updateDatabase();
+      return;
+    }
+
+    // Verificar data da última atualização
+    const stats = fs.statSync(DB_PATH);
+    lastUpdate = stats.mtime;
+
+    // Se passou mais de 30 dias, atualizar
+    const daysSinceUpdate = (Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSinceUpdate > 30) {
+      logger.info(`Banco de dados desatualizado (${Math.floor(daysSinceUpdate)} dias), iniciando atualização...`);
+      await updateDatabase();
+    }
+  } catch (error) {
+    logger.error('Erro ao verificar banco de dados:', error);
+  }
+};
+
+/**
+ * Atualizar banco de dados
+ */
+const updateDatabase = async () => {
+  try {
+    if (!LICENSE_KEY) {
+      logger.error('LICENSE_KEY não configurada para atualização do banco de dados');
+      return;
+    }
+
+    logger.info('Iniciando download do banco de dados...');
+    
+    // Criar diretório se não existir
+    const dbDir = path.dirname(DB_PATH);
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+
+    // Download do arquivo
+    const response = await new Promise((resolve, reject) => {
+      https.get(DB_URL, (res) => {
+        if (res.statusCode === 200) {
+          resolve(res);
+        } else {
+          reject(new Error(`Falha no download: ${res.statusCode}`));
+        }
+      }).on('error', reject);
+    });
+
+    // Salvar arquivo
+    const fileStream = fs.createWriteStream(DB_PATH);
+    response.pipe(fileStream);
+
+    await new Promise((resolve, reject) => {
+      fileStream.on('finish', resolve);
+      fileStream.on('error', reject);
+    });
+
+    logger.info('Banco de dados atualizado com sucesso');
+    lastUpdate = new Date();
+  } catch (error) {
+    logger.error('Erro ao atualizar banco de dados:', error);
+  }
+};
+
+// Iniciar verificação periódica
+setInterval(checkAndUpdateDatabase, UPDATE_INTERVAL);
+
+// Verificar na inicialização
+checkAndUpdateDatabase();
 
 module.exports = {
   initialize,

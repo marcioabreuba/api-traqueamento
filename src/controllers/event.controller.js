@@ -21,10 +21,9 @@ const createEvent = catchAsync(async (req, res) => {
 
     // Validar dados do evento
     try {
-      // Validação corrigida: Certifique-se de que o schema permite o campo "app"
       const { error } = eventValidation.createEvent.body.validate(req.body, {
         allowUnknown: false,
-        abortEarly: false, // Retorna todos os erros ao invés de apenas o primeiro
+        abortEarly: false,
       });
 
       if (error) {
@@ -34,7 +33,6 @@ const createEvent = catchAsync(async (req, res) => {
       }
     } catch (error) {
       logger.error(`Erro na validação dos dados: ${error.message}`);
-      // Se não for uma ApiError, converte para uma
       if (!(error instanceof ApiError)) {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
@@ -42,17 +40,21 @@ const createEvent = catchAsync(async (req, res) => {
           error.details || 'Erro na validação de dados',
         );
       }
-      throw error; // Se já for uma ApiError, apenas propague
+      throw error;
     }
 
     // Extrair domínio do header ou do payload
     const domain = req.headers['x-domain'] || req.body.domain;
     logger.info(`Domínio extraído: ${domain || 'não fornecido'}`);
 
-    // Processar evento
-    const event = await eventService.processEvent(req.body, domain);
-    console.log('event', event);
-    res.send();
+    // Processar evento passando o objeto req completo
+    const event = await eventService.processEvent(req.body, domain, req);
+    logger.info(`Evento processado com sucesso: ${event.id}`);
+    
+    res.status(httpStatus.CREATED).json({
+      success: true,
+      data: event,
+    });
   } catch (originalError) {
     // Garantir que sempre temos um erro com objeto e mensagem
     let error = originalError;

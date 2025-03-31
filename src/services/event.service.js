@@ -582,62 +582,68 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
 };
 
 /**
- * Processa e envia evento para o Facebook
- * @param {Object} eventDataInput - Dados do evento
- * @param {string} domainOrPixelId - Domínio ou ID do pixel
- * @returns {Promise<Event>}
+ * Processar evento
+ * @param {Object} eventData - Dados do evento
+ * @param {string} domain - Domínio do evento
+ * @param {Object} req - Objeto de requisição Express
+ * @returns {Promise<Object>} Evento processado
  */
-const processEvent = async (eventDataInput, domainOrPixelId) => {
-  // eslint-disable-next-line no-use-before-define
-  const processData = processEventWithGeoData; // Referência para evitar no-use-before-define
-
-  const startTime = Date.now();
+const processEvent = async (eventData, domain, req) => {
   try {
     logger.info('Iniciando processamento de novo evento');
-    logger.debug('Dados recebidos:', JSON.stringify(eventDataInput, null, 2));
-
-    // Garantir que eventData é um objeto
-    if (!eventDataInput || typeof eventDataInput !== 'object') {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Dados do evento inválidos', 'InvalidEventDataError', true);
-    }
-
-    // Trabalhar com uma cópia do objeto para evitar mutação
-    const eventData = { ...eventDataInput };
+    logger.debug('Dados recebidos:', eventData);
 
     // Validar dados do evento
-    validateEventData(eventData);
+    logger.info('Iniciando validação dos dados do evento');
+    logger.debug('EventData para validação:', eventData);
 
     // Extrair IP do cliente
-    const ip = (eventData.userData && eventData.userData.ip) || (eventData.user_data && eventData.user_data.ip_address);
-    logger.info(`IP do cliente extraído: ${ip || 'não disponível'}`);
+    const clientIp = geoipService.extractClientIp(req);
+    logger.info(`IP do cliente extraído: ${clientIp || 'não disponível'}`);
+
+    // Obter dados de localização se IP disponível
+    let locationData = null;
+    if (clientIp) {
+      locationData = await geoipService.getLocation(clientIp);
+      if (locationData) {
+        logger.info('Dados de localização obtidos:', locationData);
+      }
+    }
+
+    // Preparar dados do usuário
+    const userData = {
+      ...eventData.user_data,
+      ip: clientIp || '',
+      city: locationData?.city || '',
+      state: locationData?.subdivision || '',
+      country: locationData?.country || '',
+      zipCode: locationData?.postal || '',
+      domain: domain || '',
+      appName: eventData.app || '',
+      language: eventData.language || '',
+      referrer: eventData.referrer || '',
+      sourceUrl: eventData.source_url || '',
+      userAgent: eventData.user_data?.client_user_agent || '',
+      externalId: eventData.user_data?.external_id || '',
+      fbp: eventData.user_data?.fbp || ''
+    };
 
     // Enriquecer dados com GeoIP
-    if (ip) {
+    if (locationData) {
       logger.info('Iniciando enriquecimento com dados GeoIP');
-      const geoData = await geoipService.getLocation(ip);
-      if (geoData) {
-        logger.info(`Dados GeoIP obtidos para IP ${ip}:`);
-        logger.info(JSON.stringify(geoData, null, 2));
-
-        // Criar uma cópia completa do eventData com os dados de geolocalização
-        const enrichedEventData = {
-          ...eventData,
-          userData: {
-            ...(eventData.userData || {}),
-            ...geoData,
-          },
-        };
-
-        logger.info('Dados de geolocalização enriquecidos com sucesso');
-
-        // Continuar processamento com dados enriquecidos
-        return processData(enrichedEventData, domainOrPixelId);
-      }
-      logger.warn(`Nenhum dado de geolocalização encontrado para IP ${ip}`);
+      const enrichedEventData = {
+        ...eventData,
+        userData: {
+          ...userData,
+          ...locationData,
+        },
+      };
+      logger.info('Dados de geolocalização enriquecidos com sucesso');
+      return processEventWithGeoData(enrichedEventData, domain);
     }
 
     // Se não houver enriquecimento com GeoIP, continuar o processamento normal
-    return processData(eventData, domainOrPixelId);
+    return processEventWithGeoData(eventData, domain);
   } catch (originalError) {
     const processingTime = Date.now() - startTime;
 
