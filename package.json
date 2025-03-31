@@ -11,7 +11,8 @@
     "dev": "nodemon src/index.js",
     "test": "jest",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "update-geoip": "node scripts/update-geoip.js"
   },
   "dependencies": {
     "@maxmind/geoip2-node": "^6.0.0",
@@ -42,6 +43,7 @@
     "rate-limiter-flexible": "4.0.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
+    "tar": "^7.4.3",
     "uuid": "^11.1.0",
     "validator": "^13.15.0",
     "winston": "^3.17.0",

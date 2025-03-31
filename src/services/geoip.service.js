@@ -180,23 +180,36 @@ const getLocation = async (ip) => {
       return cachedResult.data;
     }
 
-    const result = reader.get(ip);
-    if (!result) {
-      logger.warn(`Nenhum dado encontrado para IP: ${ip}`);
-      return null;
-    }
-
-    // Extrair dados com tratamento de erro individual
+    // Estrutura básica de retorno (valores padrão)
     const locationData = {
-      country: null,
-      city: null,
-      subdivision: null,
-      postal: null,
+      country: '',
+      city: '',
+      subdivision: '',
+      postal: '',
       latitude: null,
       longitude: null,
-      timezone: null
+      timezone: ''
     };
 
+    // Tentar obter dados do IP com tratamento de erro
+    let result;
+    try {
+      result = reader.get(ip);
+      if (!result) {
+        logger.warn(`Nenhum dado encontrado para IP: ${ip}`);
+        return locationData;
+      }
+    } catch (lookupError) {
+      logger.warn(`Erro ao consultar IP ${ip} na base GeoIP: ${lookupError.message}`);
+      // Armazenar no cache o resultado vazio para evitar novas tentativas no mesmo IP
+      cache.set(ip, {
+        data: locationData,
+        timestamp: Date.now()
+      });
+      return locationData;
+    }
+
+    // Extrair dados com tratamento seguro individual para cada campo
     try {
       locationData.country = result.country && result.country.names && result.country.names.en || '';
     } catch (error) {
@@ -210,7 +223,8 @@ const getLocation = async (ip) => {
     }
 
     try {
-      locationData.subdivision = result.subdivisions && result.subdivisions[0] && result.subdivisions[0].names && result.subdivisions[0].names.en || '';
+      locationData.subdivision = result.subdivisions && result.subdivisions[0] && 
+                                result.subdivisions[0].names && result.subdivisions[0].names.en || '';
     } catch (error) {
       logger.warn(`Erro ao extrair subdivisão para IP ${ip}:`, error);
     }
@@ -222,13 +236,15 @@ const getLocation = async (ip) => {
     }
 
     try {
-      locationData.latitude = result.location && result.location.latitude || null;
+      const latitude = result.location && result.location.latitude;
+      locationData.latitude = (typeof latitude === 'number' && !isNaN(latitude)) ? latitude : null;
     } catch (error) {
       logger.warn(`Erro ao extrair latitude para IP ${ip}:`, error);
     }
 
     try {
-      locationData.longitude = result.location && result.location.longitude || null;
+      const longitude = result.location && result.location.longitude;
+      locationData.longitude = (typeof longitude === 'number' && !isNaN(longitude)) ? longitude : null;
     } catch (error) {
       logger.warn(`Erro ao extrair longitude para IP ${ip}:`, error);
     }
@@ -248,7 +264,16 @@ const getLocation = async (ip) => {
     return locationData;
   } catch (error) {
     logger.error(`Erro ao buscar localização para IP ${ip}:`, error);
-    return null;
+    // Retornar objeto vazio em vez de null para não interromper o fluxo
+    return {
+      country: '',
+      city: '',
+      subdivision: '',
+      postal: '',
+      latitude: null,
+      longitude: null,
+      timezone: ''
+    };
   }
 };
 
