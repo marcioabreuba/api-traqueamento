@@ -25,7 +25,7 @@ const getPixelConfig = async (eventData, domain) => {
     return {
       pixelId: eventData.pixel_id,
       accessToken: config.facebook.accessToken,
-      testCode: config.facebook.testCode,
+      testCode: config.facebook.testCode
     };
   }
 
@@ -35,8 +35,8 @@ const getPixelConfig = async (eventData, domain) => {
       const pixelConfig = await prisma.pixelConfig.findFirst({
         where: {
           OR: [{ domain }, { pixelId: domain }],
-          isActive: true,
-        },
+          isActive: true
+        }
       });
 
       if (pixelConfig) {
@@ -44,7 +44,7 @@ const getPixelConfig = async (eventData, domain) => {
         return {
           pixelId: pixelConfig.pixelId,
           accessToken: pixelConfig.accessToken,
-          testCode: pixelConfig.testCode,
+          testCode: pixelConfig.testCode
         };
       }
     } catch (error) {
@@ -59,7 +59,7 @@ const getPixelConfig = async (eventData, domain) => {
     return {
       pixelId: config.facebook.pixelId,
       accessToken: config.facebook.accessToken,
-      testCode: config.facebook.testCode,
+      testCode: config.facebook.testCode
     };
   }
 
@@ -99,7 +99,7 @@ const validateEventData = (eventData) => {
       httpStatus.BAD_REQUEST,
       `Campos obrigatórios ausentes: ${missingFields.join(', ')}`,
       'MissingFieldsError',
-      true,
+      true
     );
   }
 
@@ -180,8 +180,8 @@ const createEvent = async (eventData, clientIp) => {
           ...eventData,
           userData: {
             ...(eventData.userData || {}),
-            ...geoData,
-          },
+            ...geoData
+          }
         };
 
         // Substituir eventData pela versão enriquecida
@@ -212,8 +212,8 @@ const createEvent = async (eventData, clientIp) => {
         userData: eventData.userData || {},
         customData: eventData.customData || {},
         value: eventData.value,
-        currency: eventData.currency,
-      },
+        currency: eventData.currency
+      }
     });
     logger.info(`Evento criado no banco de dados com ID: ${event.id}`);
 
@@ -244,7 +244,7 @@ const createEvent = async (eventData, clientIp) => {
       'Erro ao processar evento',
       error.message || 'Erro desconhecido',
       true,
-      error.stack,
+      error.stack
     );
   }
 };
@@ -256,7 +256,7 @@ const createEvent = async (eventData, clientIp) => {
  */
 const getEventById = async (id) => {
   return prisma.event.findUnique({
-    where: { id },
+    where: { id }
   });
 };
 
@@ -285,9 +285,9 @@ const queryEvents = async (filter, options) => {
       where: filter,
       skip,
       take: limit,
-      orderBy,
+      orderBy
     }),
-    prisma.event.count({ where: filter }),
+    prisma.event.count({ where: filter })
   ]);
 
   return {
@@ -295,7 +295,7 @@ const queryEvents = async (filter, options) => {
     page,
     limit,
     totalPages: Math.ceil(totalItems / limit),
-    totalResults: totalItems,
+    totalResults: totalItems
   };
 };
 
@@ -347,10 +347,10 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         referrer: eventData.referrer || '',
         domain: domainOrPixelId || '',
         language: eventData.language || '',
-        appName: eventData.app || '',
+        appName: eventData.app || ''
       },
       customData: eventData.custom_data || {},
-      status: 'pending', // Inicialmente pendente
+      status: 'pending' // Inicialmente pendente
     };
 
     logger.debug('Evento preparado para salvar:', JSON.stringify(eventToSave, null, 2));
@@ -364,8 +364,8 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         eventTime: eventToSave.eventTime,
         userData: eventToSave.userData,
         customData: eventToSave.customData,
-        status: eventToSave.status,
-      },
+        status: eventToSave.status
+      }
     });
 
     logger.info(`Evento salvo com sucesso, ID: ${savedEvent.id}`);
@@ -379,7 +379,7 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         customData: savedEvent.customData,
         eventId: savedEvent.id,
         eventSourceUrl: eventToSave.userData.sourceUrl,
-        fbp: eventToSave.userData.fbp,
+        fbp: eventToSave.userData.fbp
       };
 
       logger.debug('Dados a serem enviados para o Facebook:', JSON.stringify(fbDataToSend, null, 2));
@@ -388,7 +388,7 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         pixelConfig.pixelId,
         pixelConfig.accessToken,
         fbDataToSend,
-        pixelConfig.testCode,
+        pixelConfig.testCode
       );
 
       // Atualizar evento com resposta do Facebook
@@ -415,8 +415,8 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
           data: {
             status: 'sent',
             responseData: responseDataToSave,
-            fbEventId,
-          },
+            fbEventId
+          }
         });
 
         // Retornar o evento atualizado
@@ -451,8 +451,8 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
           data: {
             status: 'failed',
             errorMessage,
-            updatedAt: new Date(),
-          },
+            updatedAt: new Date()
+          }
         });
 
         // Depois de atualizar com sucesso, propagar o erro com um status code apropriado
@@ -480,7 +480,7 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
           `Erro ao enviar evento para o Facebook: ${errorMessage}`,
           'FacebookSendError',
           true,
-          sendError.stack,
+          sendError.stack
         );
       } catch (updateError) {
         // Se falhar ao atualizar o evento no banco
@@ -535,8 +535,8 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
           data: {
             status: 'error',
             errorMessage,
-            updatedAt: new Date(),
-          },
+            updatedAt: new Date()
+          }
         });
 
         logger.info(`Status do evento ${savedEvent.id} atualizado para 'error'`);
@@ -572,7 +572,7 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         error.message,
         error.isOperational ? error.name : 'EventProcessingError',
         error.isOperational,
-        error.stack,
+        error.stack
       );
     } else {
       // Caso não seja um ApiError, criar um novo com status code válido
@@ -614,18 +614,18 @@ const processEvent = async (eventData, domain, req) => {
     const userData = {
       ...eventData.user_data,
       ip: clientIp || '',
-      city: locationData?.city || '',
-      state: locationData?.subdivision || '',
-      country: locationData?.country || '',
-      zipCode: locationData?.postal || '',
+      city: (locationData && locationData.city) || '',
+      state: (locationData && locationData.subdivision) || '',
+      country: (locationData && locationData.country) || '',
+      zipCode: (locationData && locationData.postal) || '',
       domain: domain || '',
       appName: eventData.app || '',
       language: eventData.language || '',
       referrer: eventData.referrer || '',
       sourceUrl: eventData.source_url || '',
-      userAgent: eventData.user_data?.client_user_agent || '',
-      externalId: eventData.user_data?.external_id || '',
-      fbp: eventData.user_data?.fbp || ''
+      userAgent: (eventData.user_data && eventData.user_data.client_user_agent) || '',
+      externalId: (eventData.user_data && eventData.user_data.external_id) || '',
+      fbp: (eventData.user_data && eventData.user_data.fbp) || ''
     };
 
     // Enriquecer dados com GeoIP
@@ -635,8 +635,8 @@ const processEvent = async (eventData, domain, req) => {
         ...eventData,
         userData: {
           ...userData,
-          ...locationData,
-        },
+          ...locationData
+        }
       };
       logger.info('Dados de geolocalização enriquecidos com sucesso');
       return processEventWithGeoData(enrichedEventData, domain);
@@ -695,5 +695,5 @@ module.exports = {
   createEvent,
   getEventById,
   queryEvents,
-  processEvent,
+  processEvent
 };
