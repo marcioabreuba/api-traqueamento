@@ -6,6 +6,7 @@ const logger = require('../config/logger');
 const config = require('../config/config');
 const facebookService = require('./facebook.service');
 const geoipService = require('./geoip.service');
+const pixelService = require('./pixel.service');
 
 const prisma = new PrismaClient();
 

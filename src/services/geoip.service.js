@@ -6,6 +6,19 @@ const logger = require('../config/logger');
 // Armazenar a instância do reader do MaxMind
 let reader = null;
 
+// Cache para armazenar resultados
+const cache = new Map();
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 horas
+
+// Códigos de erro do MaxMind
+const MAXMIND_ERROR_CODES = {
+  IP_ADDRESS_INVALID: 'IP_ADDRESS_INVALID',
+  IP_ADDRESS_REQUIRED: 'IP_ADDRESS_REQUIRED',
+  IP_ADDRESS_RESERVED: 'IP_ADDRESS_RESERVED',
+  IP_ADDRESS_NOT_FOUND: 'IP_ADDRESS_NOT_FOUND',
+  DATABASE_ERROR: 'DATABASE_ERROR'
+};
+
 /**
  * Validar formato do IP
  * @param {string} ip - Endereço IP para validar
@@ -48,18 +61,27 @@ const isValidIp = (ip) => {
 };
 
 /**
- * Limpar e validar IP
- * @param {string} ip - IP para limpar e validar
- * @returns {string|null} IP limpo e validado ou null se inválido
+ * Verificar se o banco de dados está atualizado
+ * @param {string} dbPath - Caminho do arquivo do banco de dados
+ * @returns {boolean} Se o banco está atualizado
  */
-const cleanAndValidateIp = (ip) => {
-  if (!ip) return null;
-  const cleanIp = ip.replace(/^::ffff:/, '');
-  if (!isValidIp(cleanIp)) {
-    logger.warn(`IP inválido detectado: ${ip}`);
-    return null;
+const isDatabaseUpToDate = (dbPath) => {
+  try {
+    const stats = fs.statSync(dbPath);
+    const now = new Date();
+    const dbAge = now - stats.mtime;
+    const maxAge = 30 * 24 * 60 * 60 * 1000; // 30 dias
+
+    if (dbAge > maxAge) {
+      logger.warn(`Banco de dados GeoIP está desatualizado. Idade: ${Math.floor(dbAge / (24 * 60 * 60 * 1000))} dias`);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    logger.error('Erro ao verificar idade do banco de dados:', error);
+    return false;
   }
-  return cleanIp;
 };
 
 /**
@@ -98,13 +120,19 @@ const initialize = async () => {
       return false;
     }
 
+    // Verificar se o banco está atualizado
+    if (!isDatabaseUpToDate(dbPath)) {
+      logger.warn('Banco de dados GeoIP precisa ser atualizado');
+    }
+
     const stats = fs.statSync(dbPath);
     logger.info(`Tamanho do arquivo: ${stats.size} bytes`);
 
     // Fechar reader anterior se existir
     if (reader) {
       try {
-        await reader.close();
+        reader.close();
+        logger.info('Reader anterior fechado com sucesso');
       } catch (error) {
         logger.warn('Erro ao fechar reader anterior:', error);
       }
@@ -140,78 +168,84 @@ const getLocation = async (ip) => {
       return null;
     }
 
-    const cleanIp = cleanAndValidateIp(ip);
-    if (!cleanIp) {
+    if (!isValidIp(ip)) {
       logger.warn(`IP inválido: ${ip}`);
       return null;
     }
 
-    const result = reader.get(cleanIp);
+    // Verificar cache
+    const cachedResult = cache.get(ip);
+    if (cachedResult && Date.now() - cachedResult.timestamp < CACHE_TTL) {
+      logger.debug(`Retornando resultado do cache para IP: ${ip}`);
+      return cachedResult.data;
+    }
+
+    const result = reader.get(ip);
     if (!result) {
-      logger.warn(`Nenhum dado encontrado para IP: ${cleanIp}`);
+      logger.warn(`Nenhum dado encontrado para IP: ${ip}`);
       return null;
     }
 
-    // Validar e extrair dados com tratamento de erros
-    const location = {
-      country: '',
-      city: '',
-      subdivision: '',
-      postal: '',
+    // Extrair dados com tratamento de erro individual
+    const locationData = {
+      country: null,
+      city: null,
+      subdivision: null,
+      postal: null,
       latitude: null,
       longitude: null,
-      timezone: ''
+      timezone: null
     };
 
     try {
-      if (result.country && result.country.names && result.country.names.en) {
-        location.country = result.country.names.en;
-      }
+      locationData.country = result.country && result.country.names && result.country.names.en || '';
     } catch (error) {
-      logger.warn('Erro ao extrair país:', error);
+      logger.warn(`Erro ao extrair país para IP ${ip}:`, error);
     }
 
     try {
-      if (result.city && result.city.names && result.city.names.en) {
-        location.city = result.city.names.en;
-      }
+      locationData.city = result.city && result.city.names && result.city.names.en || '';
     } catch (error) {
-      logger.warn('Erro ao extrair cidade:', error);
+      logger.warn(`Erro ao extrair cidade para IP ${ip}:`, error);
     }
 
     try {
-      if (result.subdivisions && result.subdivisions[0] && result.subdivisions[0].names && result.subdivisions[0].names.en) {
-        location.subdivision = result.subdivisions[0].names.en;
-      }
+      locationData.subdivision = result.subdivisions && result.subdivisions[0] && result.subdivisions[0].names && result.subdivisions[0].names.en || '';
     } catch (error) {
-      logger.warn('Erro ao extrair subdivisão:', error);
+      logger.warn(`Erro ao extrair subdivisão para IP ${ip}:`, error);
     }
 
     try {
-      if (result.postal && result.postal.code) {
-        location.postal = result.postal.code;
-      }
+      locationData.postal = result.postal && result.postal.code || '';
     } catch (error) {
-      logger.warn('Erro ao extrair código postal:', error);
+      logger.warn(`Erro ao extrair código postal para IP ${ip}:`, error);
     }
 
     try {
-      if (result.location) {
-        if (typeof result.location.latitude === 'number') {
-          location.latitude = result.location.latitude;
-        }
-        if (typeof result.location.longitude === 'number') {
-          location.longitude = result.location.longitude;
-        }
-        if (result.location.time_zone) {
-          location.timezone = result.location.time_zone;
-        }
-      }
+      locationData.latitude = result.location && result.location.latitude || null;
     } catch (error) {
-      logger.warn('Erro ao extrair coordenadas e timezone:', error);
+      logger.warn(`Erro ao extrair latitude para IP ${ip}:`, error);
     }
 
-    return location;
+    try {
+      locationData.longitude = result.location && result.location.longitude || null;
+    } catch (error) {
+      logger.warn(`Erro ao extrair longitude para IP ${ip}:`, error);
+    }
+
+    try {
+      locationData.timezone = result.location && result.location.time_zone || '';
+    } catch (error) {
+      logger.warn(`Erro ao extrair timezone para IP ${ip}:`, error);
+    }
+
+    // Armazenar no cache
+    cache.set(ip, {
+      data: locationData,
+      timestamp: Date.now()
+    });
+
+    return locationData;
   } catch (error) {
     logger.error(`Erro ao buscar localização para IP ${ip}:`, error);
     return null;
@@ -300,5 +334,6 @@ module.exports = {
   initialize,
   getLocation,
   extractClientIp,
-  isValidIp
+  isValidIp,
+  MAXMIND_ERROR_CODES
 };
