@@ -15,7 +15,7 @@
     "update-geoip": "node scripts/update-geoip.js"
   },
   "dependencies": {
-    "@maxmind/geoip2-node": "^6.0.0",
+    "@maxmind/geoip2-node": "6.0.0",
     "@prisma/client": "^6.5.0",
     "async": "^3.2.6",
     "axios": "^1.8.4",
@@ -28,6 +28,7 @@
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^7.5.0",
     "express-validator": "7.0.1",
+    "extract-zip": "^2.0.1",
     "helmet": "^8.1.0",
     "helmet-csp": "3.4.0",
     "http-status": "^2.1.0",
