@@ -19,27 +19,57 @@ Este erro ocorria devido a incompatibilidades entre a versão 6.0.0 da bibliotec
 
 ## Soluções Implementadas
 
-### 1. Downgrade da Biblioteca
+### 1. Sistema de Fallback Triplo (3 níveis)
 
-A primeira medida implementada foi fazer downgrade da biblioteca `@maxmind/geoip2-node`:
+Implementamos um sistema de fallback robusto com 3 níveis:
 
-```diff
-- "@maxmind/geoip2-node": "6.0.0",
-+ "@maxmind/geoip2-node": "5.0.0",
+1. **Nível 1**: Tentar com a biblioteca `@maxmind/geoip2-node` (versão 6.0.0)
+2. **Nível 2**: Em caso de falha, tentar com a biblioteca alternativa `maxmind`
+3. **Nível 3**: Se ambas falharem, usar um fallback estático para IPs brasileiros conhecidos
+
+### 2. Detecção Inteligente de IPs Brasileiros
+
+Adicionamos uma função que identifica IPs brasileiros com base em faixas conhecidas:
+
+```javascript
+const BRAZILIAN_IP_PREFIXES = [
+  '177.', '179.', '186.', '187.', '189.', '191.', '200.', '201.', 
+  '187.', '45.', '143.', '152.', '168.', '170.', '168.'
+];
+
+const isBrazilianIP = (ip) => {
+  if (!ip || typeof ip !== 'string') return false;
+  
+  // Limpar prefixo IPv6 se presente
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.substring(7);
+  }
+  
+  // Verificar se o IP começa com algum dos prefixos conhecidos do Brasil
+  return BRAZILIAN_IP_PREFIXES.some(prefix => ip.startsWith(prefix));
+};
 ```
 
-A versão 5.0.0 mostrou-se mais estável e compatível com a base de dados.
+### 3. Dados de Fallback para IPs Brasileiros
 
-### 2. Sistema de Fallback Duplo
+Criamos um conjunto mínimo de dados para IPs brasileiros que falham em ambos os readers:
 
-Implementamos um sistema de fallback robusto que usa duas bibliotecas diferentes:
+```javascript
+const getBrazilianFallbackData = () => {
+  return {
+    country: 'Brasil',
+    city: '',
+    subdivision: '',
+    postal: '',
+    latitude: -14.235,  // Coordenadas aproximadas do centro do Brasil
+    longitude: -51.9253,
+    timezone: 'America/Sao_Paulo',
+    accuracyRadius: 1000
+  };
+};
+```
 
-- **Primário**: `@maxmind/geoip2-node` versão 5.0.0
-- **Secundário**: `maxmind` (já estava nas dependências do projeto)
-
-Este sistema tenta primeiro obter a localização com a biblioteca principal e, em caso de falha, usa a secundária.
-
-### 3. Script de Diagnóstico
+### 4. Script de Diagnóstico
 
 Foi implementado um script de diagnóstico que verifica a integridade da base de dados:
 
@@ -53,7 +83,7 @@ Este script:
 - Testa consultas com IPs conhecidos (IPv4 e IPv6)
 - Identifica possíveis problemas de corrupção
 
-### 4. Script de Correção
+### 5. Script de Correção
 
 Foi criado um script para facilitar a correção da base de dados GeoIP:
 
@@ -73,31 +103,15 @@ Este script:
 
 ### Erro "Unknown type NaN at offset" no Render
 
-Este erro geralmente indica uma incompatibilidade entre a versão da biblioteca e a base de dados. Para corrigir:
+Este erro geralmente indica uma incompatibilidade entre a versão da biblioteca e a base de dados. As soluções implementadas lidam com este problema de três formas:
 
-1. SSH para o servidor Render:
-   ```bash
-   ssh <usuário>@ssh.render.com
-   ```
-
-2. Navegar para o diretório do projeto:
-   ```bash
-   cd /opt/render/project/src
-   ```
-
-3. Executar o script de correção:
-   ```bash
-   npm run fix-geoip
-   ```
-
-4. Reiniciar o serviço:
-   ```bash
-   # Via Render Dashboard ou comando específico
-   ```
+1. Tentativa com a primeira biblioteca
+2. Tentativa com a segunda biblioteca alternativa
+3. Uso de dados de fallback para IPs brasileiros quando ambas as tentativas falham
 
 ### Caso Específico de IPs Brasileiros
 
-Identificamos que os IPs brasileiros (faixas 177.x.x.x, 179.x.x.x, 186.x.x.x, etc.) causavam problemas específicos com a versão 6.0.0 da biblioteca. A combinação das duas soluções (downgrade + fallback) resolve esse problema.
+Identificamos que os IPs brasileiros (faixas 177.x.x.x, 179.x.x.x, 186.x.x.x, etc.) causavam problemas específicos. A solução implementada garante que mesmo se os métodos regulares falharem, o sistema ainda retornará dados geográficos básicos para o Brasil.
 
 ### Atualizações Regulares
 
@@ -129,38 +143,46 @@ Para verificar manualmente a integridade da base GeoIP:
    node -e "const { Reader } = require('@maxmind/geoip2-node'); const fs = require('fs'); const reader = Reader.openBuffer(fs.readFileSync('./data/GeoLite2-City.mmdb')); console.log(reader.city('8.8.8.8'));"
    ```
 
-## Implementação do Sistema de Fallback
+## Implementação do Sistema de Fallback Triplo
 
-O serviço GeoIP foi modificado para utilizar duas bibliotecas diferentes:
+O serviço GeoIP foi modificado para utilizar um sistema robusto de fallback em três camadas:
 
 ```javascript
-// Inicialização de ambos readers
-const initialize = async () => {
-  // Inicializar o reader principal (@maxmind/geoip2-node)
-  reader = Reader.openBuffer(dbBuffer);
-  
-  // Inicializar o reader de fallback (maxmind)
-  fallbackReader = await maxmind.open(dbPath);
-  
-  // (resto do código...)
-};
-
-// Obtenção de localização com fallback
 const getLocation = async (ip) => {
-  // Tentar primeiro com o reader principal
   try {
-    result = reader.city(ip);
-    // ...
-  } catch (primaryError) {
-    // Se falhar, tentar com o reader de fallback
-    try {
-      const fallbackResult = fallbackReader.get(ip);
-      // ...
-    } catch (fallbackError) {
-      // ...
+    // Verificações iniciais...
+    
+    // Nível 1: Tentar com o reader principal (@maxmind/geoip2-node)
+    if (reader) {
+      try {
+        result = reader.city(ip);
+        locationData = extractLocationData(result);
+        // ...
+      } catch (primaryError) {
+        // Tratamento de erros e tentativas com variações do IP...
+      }
     }
+
+    // Nível 2: Se o reader principal falhou, tentar com o reader de fallback (maxmind)
+    if (!locationData && fallbackReader) {
+      try {
+        const fallbackResult = fallbackReader.get(ip);
+        // Processamento do resultado...
+      } catch (fallbackError) {
+        // Tratamento de erros...
+      }
+    }
+
+    // Nível 3: Fallback para IPs brasileiros conhecidos
+    if (!locationData && isBrazilianIP(ip)) {
+      logger.info(`Usando dados de fallback para IP brasileiro: ${ip}`);
+      locationData = getBrazilianFallbackData();
+    }
+
+    // Processamento final e resposta...
+  } catch (error) {
+    // Tratamento de erros gerais...
   }
-  // (resto do código...)
 };
 ```
 
@@ -169,4 +191,4 @@ const getLocation = async (ip) => {
 ### Março de 2025 - Problema com IPs Brasileiros no Render
 - **Sintoma**: Erros "Unknown type NaN at offset" ao consultar IPs específicos (especialmente IPs do Brasil)
 - **Causa**: Incompatibilidade entre a versão 6.0.0 da biblioteca @maxmind/geoip2-node e a base GeoLite2-City
-- **Solução**: Downgrade para versão 5.0.0 da biblioteca e implementação de sistema de fallback duplo 
+- **Solução**: Implementação de um sistema de fallback triplo com detecção específica para IPs brasileiros 

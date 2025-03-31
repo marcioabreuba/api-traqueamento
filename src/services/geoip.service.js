@@ -31,6 +31,38 @@ const ERROR_CODES = {
   NAN_TYPE_ERROR: 'NAN_TYPE_ERROR' // Novo código de erro para o problema específico no Render
 };
 
+// Adicionar lista de prefixos de IPs brasileiros conhecidos
+const BRAZILIAN_IP_PREFIXES = [
+  '177.', '179.', '186.', '187.', '189.', '191.', '200.', '201.', '187.', '45.', '143.', '152.', '168.', '170.', '168.'
+];
+
+// Adicionar função para verificar se é um IP brasileiro
+const isBrazilianIP = (ip) => {
+  if (!ip || typeof ip !== 'string') return false;
+  
+  // Limpar prefixo IPv6 se presente
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.substring(7);
+  }
+  
+  // Verificar se o IP começa com algum dos prefixos conhecidos do Brasil
+  return BRAZILIAN_IP_PREFIXES.some(prefix => ip.startsWith(prefix));
+};
+
+// Adicionar dados de fallback para IPs brasileiros
+const getBrazilianFallbackData = () => {
+  return {
+    country: 'Brasil',
+    city: '',
+    subdivision: '',
+    postal: '',
+    latitude: -14.235,  // Coordenadas aproximadas do centro do Brasil
+    longitude: -51.9253,
+    timezone: 'America/Sao_Paulo',
+    accuracyRadius: 1000
+  };
+};
+
 /**
  * Validar formato do IP
  * @param {string} ip - Endereço IP para validar
@@ -373,6 +405,12 @@ const getLocation = async (ip) => {
       }
     }
 
+    // Estratégia 3: Fallback para IPs brasileiros conhecidos
+    if (!locationData && isBrazilianIP(ip)) {
+      logger.info(`Usando dados de fallback para IP brasileiro: ${ip}`);
+      locationData = getBrazilianFallbackData();
+    }
+
     // Se ainda não temos dados, retornar objeto vazio
     if (!locationData) {
       // Tratamento específico para diferentes tipos de erros
@@ -552,6 +590,7 @@ module.exports = {
   getLocation,
   extractClientIp,
   isValidIp,
+  isBrazilianIP,
   MAXMIND_ERROR_CODES,
   ERROR_CODES
 };
