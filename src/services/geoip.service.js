@@ -8,7 +8,7 @@ let reader = null;
 
 // Cache para armazenar resultados
 const cache = new Map();
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 horas
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 horas em milissegundos
 
 // Códigos de erro do MaxMind
 const MAXMIND_ERROR_CODES = {
@@ -17,6 +17,16 @@ const MAXMIND_ERROR_CODES = {
   IP_ADDRESS_RESERVED: 'IP_ADDRESS_RESERVED',
   IP_ADDRESS_NOT_FOUND: 'IP_ADDRESS_NOT_FOUND',
   DATABASE_ERROR: 'DATABASE_ERROR'
+};
+
+// Constantes para o serviço GeoIP
+const ERROR_CODES = {
+  IP_ADDRESS_INVALID: 'IP_ADDRESS_INVALID',
+  DATABASE_ERROR: 'DATABASE_ERROR',
+  FILE_NOT_FOUND: 'FILE_NOT_FOUND',
+  PERMISSION_DENIED: 'PERMISSION_DENIED',
+  UNKNOWN_ERROR: 'UNKNOWN_ERROR',
+  NAN_TYPE_ERROR: 'NAN_TYPE_ERROR' // Novo código de erro para o problema específico no Render
 };
 
 /**
@@ -475,5 +485,6 @@ module.exports = {
   getLocation,
   extractClientIp,
   isValidIp,
-  MAXMIND_ERROR_CODES
+  MAXMIND_ERROR_CODES,
+  ERROR_CODES
 };
