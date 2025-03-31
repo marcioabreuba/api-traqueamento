@@ -162,6 +162,53 @@ const formatEventData = (data) => {
   logger.info(`Evento formatado: ${eventName} (ID: ${eventId})`);
   logger.debug('Evento formatado com sucesso:', JSON.stringify(event, null, 2));
 
+  // Log detalhado dos dados de geolocalização enviados ao Facebook
+  logger.info('=================== DADOS ENVIADOS AO FACEBOOK ===================');
+  logger.info(`Event Name: ${event.event_name}`);
+  logger.info(`Event ID: ${event.event_id}`);
+  
+  if (event.user_data) {
+    logger.info('DADOS DE LOCALIZAÇÃO E USUÁRIO:');
+    logger.info(`IP: ${event.user_data.client_ip_address || 'Não enviado'}`);
+    
+    if (event.user_data.ct) {
+      logger.info(`Cidade: ${event.user_data.ct.join(', ')}`);
+    } else {
+      logger.info('Cidade: Não enviada');
+    }
+    
+    if (event.user_data.st) {
+      logger.info(`Estado: ${event.user_data.st.join(', ')}`);
+    } else {
+      logger.info('Estado: Não enviado');
+    }
+    
+    if (event.user_data.country) {
+      logger.info(`País: ${event.user_data.country.join(', ')}`);
+    } else {
+      logger.info('País: Não enviado');
+    }
+    
+    if (event.user_data.zp) {
+      logger.info(`CEP: ${event.user_data.zp.join(', ')}`);
+    } else {
+      logger.info('CEP: Não enviado');
+    }
+    
+    logger.info(`FBP: ${event.user_data.fbp || 'Não enviado'}`);
+    logger.info(`User Agent: ${event.user_data.client_user_agent || 'Não enviado'}`);
+    
+    if (event.user_data.external_id) {
+      logger.info(`External ID: ${event.user_data.external_id.join(', ')}`);
+    } else {
+      logger.info('External ID: Não enviado');
+    }
+  } else {
+    logger.info('Nenhum dado de usuário enviado');
+  }
+  
+  logger.info('=================================================================');
+
   return event;
 };
 

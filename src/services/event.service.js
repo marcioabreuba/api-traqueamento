@@ -201,22 +201,54 @@ const createEvent = async (eventData, clientIp) => {
       logger.info(`Usando Pixel ID padrão: ${eventData.pixelId}`);
     }
 
+    // Preparar evento para salvar no banco
+    logger.info('Configuração do pixel obtida:', JSON.stringify(eventData, null, 2));
+
+    // Log detalhado dos dados de geolocalização
+    logger.info('================== DADOS DE GEOLOCALIZAÇÃO ==================');
+    logger.info(`IP do cliente: ${ip || 'Não disponível'}`);
+    
+    if (eventData.userData) {
+      logger.info('Dados de localização no userData:');
+      logger.info(`Cidade: ${eventData.userData.city || 'Não disponível'}`);
+      logger.info(`Estado: ${eventData.userData.subdivision || 'Não disponível'}`);
+      logger.info(`País: ${eventData.userData.country || 'Não disponível'}`);
+      logger.info(`CEP: ${eventData.userData.postal || 'Não disponível'}`);
+      logger.info(`Latitude: ${eventData.userData.latitude || 'Não disponível'}`);
+      logger.info(`Longitude: ${eventData.userData.longitude || 'Não disponível'}`);
+      logger.info(`Timezone: ${eventData.userData.timezone || 'Não disponível'}`);
+    } else {
+      logger.info('Nenhum dado de userData disponível');
+    }
+    
+    if (eventData.user_data) {
+      logger.info('Dados do usuário em user_data:');
+      logger.info(JSON.stringify(eventData.user_data, null, 2));
+    }
+    logger.info('=========================================================');
+
+    // Evento para salvar no banco
+    const event = {
+      id: uuidv4(),
+      pixelId: eventData.pixelId,
+      eventName: eventData.event_name,
+      eventTime: eventData.event_time,
+      sourceUrl: eventData.event_source_url || `https://${eventData.domain}`,
+      userData: eventData.userData || {},
+      customData: eventData.custom_data || {},
+      value: eventData.value || (eventData.custom_data && eventData.custom_data.value) || null,
+      currency: eventData.currency || (eventData.custom_data && eventData.custom_data.currency) || null,
+      status: 'pending'
+    };
+
+    logger.debug('Evento preparado para salvar:', JSON.stringify(event, null, 2));
+
     // Criar evento no banco de dados
     logger.info('Iniciando criação do evento no banco de dados');
-    const event = await prisma.event.create({
-      data: {
-        id: uuidv4(),
-        pixelId: eventData.pixelId,
-        eventName: eventData.eventName,
-        eventTime: eventData.eventTime || Math.floor(Date.now() / 1000),
-        sourceUrl: eventData.sourceUrl,
-        userData: eventData.userData || {},
-        customData: eventData.customData || {},
-        value: eventData.value,
-        currency: eventData.currency
-      }
+    const savedEvent = await prisma.event.create({
+      data: event
     });
-    logger.info(`Evento criado no banco de dados com ID: ${event.id}`);
+    logger.info(`Evento criado no banco de dados com ID: ${savedEvent.id}`);
 
     // Enviar evento para o Facebook
     if (eventData.pixelId) {
@@ -228,7 +260,7 @@ const createEvent = async (eventData, clientIp) => {
     const processingTime = Date.now() - startTime;
     logger.info(`Processamento do evento concluído em ${processingTime}ms`);
 
-    return event;
+    return savedEvent;
   } catch (error) {
     const processingTime = Date.now() - startTime;
     logger.error(`Erro ao processar evento após ${processingTime}ms:`, error);
@@ -314,6 +346,42 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
 
   try {
     logger.info('Continuando processamento com dados GeoIP');
+
+    // Verificar e normalizar os dados recebidos
+    if (!eventData) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Dados do evento não fornecidos');
+    }
+
+    // Log detalhado do que está sendo recebido
+    logger.info('================== DADOS DO EVENTO ==================');
+    logger.info(`Nome do evento: ${eventData.event_name || 'Não disponível'}`);
+    logger.info(`Domínio: ${domainOrPixelId || 'Não disponível'}`);
+    
+    if (eventData.userData) {
+      logger.info('DETALHES DO USUÁRIO E GEOLOCALIZAÇÃO:');
+      logger.info(`IP: ${eventData.userData.ip || 'Não disponível'}`);
+      logger.info(`Cidade: ${eventData.userData.city || 'Não disponível'}`);
+      logger.info(`Estado: ${eventData.userData.state || eventData.userData.subdivision || 'Não disponível'}`);
+      logger.info(`País: ${eventData.userData.country || 'Não disponível'}`);
+      logger.info(`CEP: ${eventData.userData.zipCode || eventData.userData.postal || 'Não disponível'}`);
+      
+      if (eventData.userData.latitude && eventData.userData.longitude) {
+        logger.info(`Coordenadas: ${eventData.userData.latitude}, ${eventData.userData.longitude}`);
+      } else {
+        logger.info('Coordenadas: Não disponíveis');
+      }
+      
+      logger.info(`Timezone: ${eventData.userData.timezone || 'Não disponível'}`);
+      logger.info(`FBP: ${eventData.userData.fbp || 'Não disponível'}`);
+      logger.info(`ID Externo: ${eventData.userData.externalId || 'Não disponível'}`);
+      logger.info(`Navegador: ${eventData.userData.userAgent || 'Não disponível'}`);
+    } else if (eventData.user_data) {
+      logger.info('DADOS DE USUÁRIO ALTERNATIVOS:');
+      logger.info(JSON.stringify(eventData.user_data, null, 2));
+    } else {
+      logger.info('Nenhum dado de usuário disponível');
+    }
+    logger.info('=========================================================');
 
     // Obter configuração do pixel
     const pixelConfig = await getPixelConfig(eventData, domainOrPixelId);
