@@ -5,70 +5,116 @@
 O serviço de GeoIP pode apresentar o seguinte erro ao tentar obter a localização de determinados IPs:
 
 ```
-error: Erro ao buscar localização para IP XXX.XXX.XXX.XXX: Unknown type NaN at offset XXXXXXXX
+error: Unknown type NaN at offset XXXXXXX
 ```
 
-Este erro ocorre devido a um problema na estrutura interna do banco de dados GeoIP ou a uma incompatibilidade entre a versão do banco de dados e a biblioteca utilizada.
+Este erro ocorre devido a uma corrupção na estrutura interna do banco de dados GeoIP, geralmente causada durante a transferência do arquivo para o servidor ou durante o processo de deploy.
+
+## Sintomas
+
+- Erros "Unknown type NaN at offset" ao consultar determinados IPs
+- Funcionamento inconsistente entre ambiente local e ambiente de produção (Render)
+- A mesma base de dados funciona em um ambiente, mas falha em outro
 
 ## Soluções Implementadas
 
-### 1. Melhorias no Tratamento de Erros
+### 1. Script de Diagnóstico
 
-A função `getLocation` em `src/services/geoip.service.js` foi modificada para:
-
-- Adicionar tratamento de erro específico quando ocorre falha ao consultar um IP no banco de dados
-- Retornar um objeto vazio em vez de `null` quando ocorrem erros, para não interromper o fluxo da aplicação
-- Implementar validações mais robustas ao extrair dados de localização
-
-### 2. Script de Atualização do Banco de Dados
-
-Foi criado um script para facilitar a atualização da base de dados GeoIP:
+Foi implementado um script de diagnóstico que verifica a integridade da base de dados:
 
 ```bash
-# Atualizar o banco de dados GeoIP
-yarn update-geoip
+# Executar diagnóstico e teste da base GeoIP
+npm run test-geoip
 ```
 
 Este script:
-- Baixa a versão mais recente do banco de dados GeoLite2-City da MaxMind
+- Verifica se a base GeoIP pode ser carregada corretamente
+- Testa consultas com IPs conhecidos (IPv4 e IPv6)
+- Identifica possíveis problemas de corrupção
+
+### 2. Script de Correção
+
+Foi criado um script para facilitar a correção da base de dados GeoIP:
+
+```bash
+# Corrigir a base de dados GeoIP
+npm run fix-geoip
+```
+
+Este script:
+- Verifica a integridade da base atual
+- Baixa uma nova cópia da base GeoLite2-City da MaxMind
 - Cria um backup da base atual (se existir)
-- Substitui o arquivo existente pela nova versão
-- Remove arquivos temporários
+- Valida a integridade da nova base antes de substituir a atual
+- Remove arquivos temporários após a conclusão
 
-## Como Atualizar o Banco de Dados GeoIP
+## Como Resolver Problemas Comuns
 
-Para atualizar o banco de dados GeoIP, siga os passos abaixo:
+### Erro "Unknown type NaN at offset" no Render
 
-1. Verifique se as credenciais do MaxMind estão configuradas no arquivo `.env`:
-   ```
-   MAXMIND_ACCOUNT_ID=seu_id
-   MAXMIND_LICENSE_KEY=sua_chave
-   ```
+Este erro geralmente indica que a base de dados foi corrompida durante o upload/deploy para o servidor. Para corrigir:
 
-2. Execute o comando:
+1. SSH para o servidor Render:
    ```bash
-   yarn update-geoip
+   ssh <usuário>@ssh.render.com
    ```
 
-3. Reinicie o servidor após a atualização:
+2. Navegar para o diretório do projeto:
    ```bash
-   yarn start
+   cd /opt/render/project/src
    ```
 
-## Observações Importantes
-
-- O banco de dados GeoIP deve ser atualizado regularmente (recomendado mensalmente)
-- A pasta `data` deve ter permissões de escrita para o usuário que executa a aplicação
-- Em ambientes de produção (como Render), pode ser necessário configurar um script de atualização periódica
-
-## Diagnóstico de Problemas
-
-Se ainda ocorrerem problemas com o GeoIP após a atualização:
-
-1. Verifique se o arquivo `data/GeoLite2-City.mmdb` existe e tem o tamanho correto (aproximadamente 60-70MB)
-2. Teste a inicialização do serviço GeoIP em ambiente local:
+3. Executar o script de correção:
    ```bash
-   node test-geoip.js
+   npm run fix-geoip
    ```
-3. Verifique os logs para identificar erros específicos durante a inicialização ou consulta
-4. Se o erro persistir em IPs específicos, verifique se esses IPs estão em um formato válido e se não são IPs reservados ou privados 
+
+4. Reiniciar o serviço:
+   ```bash
+   # Via Render Dashboard ou comando específico
+   ```
+
+### Atualizações Regulares
+
+Para evitar problemas com versões desatualizadas, recomenda-se:
+
+1. Atualizar a base de dados mensalmente:
+   ```bash
+   npm run update-geoip
+   ```
+
+2. Configurar um job cron para automatizar esta tarefa:
+   ```bash
+   # Exemplo: Atualizar no primeiro dia de cada mês às 03:00
+   0 3 1 * * cd /caminho/do/projeto && npm run update-geoip
+   ```
+
+## Verificação Manual da Base
+
+Para verificar manualmente a integridade da base GeoIP:
+
+1. Verificar o tamanho do arquivo:
+   ```bash
+   ls -la data/GeoLite2-City.mmdb
+   ```
+   O tamanho normal deve ser aproximadamente 60-70MB.
+
+2. Testar consultas básicas:
+   ```bash
+   node -e "const { Reader } = require('@maxmind/geoip2-node'); const fs = require('fs'); const reader = Reader.openBuffer(fs.readFileSync('./data/GeoLite2-City.mmdb')); console.log(reader.city('8.8.8.8'));"
+   ```
+
+## Procedimento para Ambiente de Produção
+
+Em ambiente de produção, sempre siga este fluxo:
+
+1. Realizar backup da base atual antes de qualquer atualização
+2. Validar a nova base em ambiente de homologação antes de atualizar produção
+3. Manter uma cópia da última versão funcional conhecida
+
+## Histórico de Problemas Conhecidos
+
+### Março de 2024 - Problema no Render
+- **Sintoma**: Erros "Unknown type NaN at offset" ao consultar IPs específicos
+- **Causa**: Corrupção da base durante deploy
+- **Solução**: Script de correção implementado para baixar e validar nova base 

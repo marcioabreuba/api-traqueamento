@@ -12,7 +12,9 @@
     "test": "jest",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "update-geoip": "node scripts/update-geoip.js"
+    "update-geoip": "node scripts/update-geoip.js",
+    "fix-geoip": "node scripts/fix-geoip.js",
+    "test-geoip": "node scripts/test-geoip.js"
   },
   "dependencies": {
     "@maxmind/geoip2-node": "6.0.0",
