@@ -210,18 +210,21 @@ const getLocation = async (ip) => {
       // Usar a API direta do Reader do GeoIP2-node
       const result = reader.city(ip);
       
+      // Log da resposta completa para diagnóstico
+      logger.debug(`Resposta completa do MaxMind para IP ${ip}: ${JSON.stringify(result, null, 2)}`);
+      
       // Extrair dados com validação
       const locationData = {
-        country: result.country && result.country.names && result.country.names.en || '',
-        city: result.city && result.city.names && result.city.names.en || '',
+        country: result.country && result.country.names && (result.country.names.pt || result.country.names['pt-BR'] || result.country.names.en) || '',
+        city: result.city && result.city.names && (result.city.names.pt || result.city.names['pt-BR'] || result.city.names.en) || '',
         subdivision: result.subdivisions && result.subdivisions[0] && 
-                   result.subdivisions[0].names && result.subdivisions[0].names.en || '',
+                   result.subdivisions[0].names && (result.subdivisions[0].names.pt || result.subdivisions[0].names['pt-BR'] || result.subdivisions[0].names.en) || '',
         postal: result.postal && result.postal.code || '',
         latitude: (result.location && result.location.latitude && 
                   !isNaN(result.location.latitude)) ? result.location.latitude : null,
         longitude: (result.location && result.location.longitude && 
                    !isNaN(result.location.longitude)) ? result.location.longitude : null,
-        timezone: result.location && result.location.time_zone || ''
+        timezone: result.location && result.location.timeZone || ''
       };
 
       // Armazenar no cache
