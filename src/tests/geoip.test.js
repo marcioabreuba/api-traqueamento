@@ -128,6 +128,28 @@ describe('GeoIP Service', () => {
       expect(ip).toBe('1.1.1.1');
     });
 
+    it('should extract IP from origin header', () => {
+      const req = {
+        headers: {
+          origin: 'http://192.168.1.1'
+        }
+      };
+
+      const ip = geoipService.extractClientIp(req);
+      expect(ip).toBe('192.168.1.1');
+    });
+
+    it('should handle multiple IPs in headers', () => {
+      const req = {
+        headers: {
+          'x-forwarded-for': '192.168.1.1, 10.0.0.0, 172.16.0.0'
+        }
+      };
+
+      const ip = geoipService.extractClientIp(req);
+      expect(ip).toBe('192.168.1.1');
+    });
+
     it('should return null for invalid IPs', () => {
       const req = {
         headers: {
@@ -156,6 +178,12 @@ describe('GeoIP Service', () => {
       const ip = 'invalid.ip';
       const location = await geoipService.getLocation(ip);
       expect(location).toBeNull();
+    });
+
+    it('should handle IPv6 lookup', async () => {
+      const ip = '2001:db8::1';
+      const location = await geoipService.getLocation(ip);
+      expect(location).toBeDefined();
     });
   });
 }); 

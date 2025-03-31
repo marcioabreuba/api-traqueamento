@@ -69,12 +69,15 @@ const cleanAndValidateIp = (ip) => {
 const initialize = async () => {
   try {
     logger.info('Iniciando inicialização do serviço GeoIP');
+    
     // Tentar diferentes caminhos possíveis
     const possiblePaths = [
       path.join(process.cwd(), 'data', 'GeoLite2-City.mmdb'),
       path.join(__dirname, '../../data/GeoLite2-City.mmdb'),
+      path.join(__dirname, '../data/GeoLite2-City.mmdb'),
       'data/GeoLite2-City.mmdb',
-      './data/GeoLite2-City.mmdb'
+      './data/GeoLite2-City.mmdb',
+      '/opt/render/project/src/data/GeoLite2-City.mmdb'
     ];
 
     let dbPath = null;
@@ -105,6 +108,7 @@ const initialize = async () => {
     // Verificar tamanho
     const stats = fs.statSync(dbPath);
     logger.info(`Tamanho do arquivo: ${stats.size} bytes`);
+
     // Tentar inicializar o leitor
     try {
       logger.info('Tentando abrir a base de dados GeoIP...');
@@ -114,11 +118,13 @@ const initialize = async () => {
       logger.error(`Erro ao abrir a base de dados GeoIP: ${error.message}`);
       return false;
     }
+
     // Verificar se o reader foi inicializado corretamente
     if (!reader) {
       logger.error('Falha ao inicializar o leitor MaxMind');
       return false;
     }
+
     // Testar o leitor com um IP de exemplo
     try {
       logger.info('Testando o leitor com IP 8.8.8.8...');
@@ -247,7 +253,8 @@ const extractClientIp = (req) => {
     'x-appengine-user-ip',
     'x-arr-clientip',
     'x-azure-clientip',
-    'x-aws-ec2-metadata-ip'
+    'x-aws-ec2-metadata-ip',
+    'x-requested-with'
   ];
 
   // Tentar obter o IP dos headers
@@ -290,6 +297,20 @@ const extractClientIp = (req) => {
     if (isValidIp(queryIp)) {
       logger.info(`IP válido extraído do query string: ${queryIp}`);
       return queryIp;
+    }
+  }
+
+  // Tentar obter o IP do header de origem
+  if (req.headers && req.headers.origin) {
+    try {
+      const url = new URL(req.headers.origin);
+      const hostname = url.hostname;
+      if (isValidIp(hostname)) {
+        logger.info(`IP válido extraído do header origin: ${hostname}`);
+        return hostname;
+      }
+    } catch (error) {
+      logger.debug('Erro ao processar header origin:', error);
     }
   }
 
