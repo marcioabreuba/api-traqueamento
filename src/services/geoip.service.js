@@ -101,15 +101,26 @@ const initialize = async () => {
     const stats = fs.statSync(dbPath);
     logger.info(`Tamanho do arquivo: ${stats.size} bytes`);
 
+    // Fechar reader anterior se existir
+    if (reader) {
+      try {
+        await reader.close();
+      } catch (error) {
+        logger.warn('Erro ao fechar reader anterior:', error);
+      }
+    }
+
     reader = await maxmind.open(dbPath);
     logger.info('Base de dados GeoIP aberta com sucesso');
 
+    // Testar com um IP conhecido
     const testResult = reader.get('8.8.8.8');
     if (testResult) {
       logger.info('Base de dados GeoIP inicializada e testada com sucesso');
       return true;
     }
     
+    logger.error('Falha ao testar base de dados GeoIP');
     return false;
   } catch (error) {
     logger.error('Erro ao inicializar GeoIP:', error);
@@ -129,26 +140,78 @@ const getLocation = async (ip) => {
       return null;
     }
 
-    if (!isValidIp(ip)) {
+    const cleanIp = cleanAndValidateIp(ip);
+    if (!cleanIp) {
       logger.warn(`IP inválido: ${ip}`);
       return null;
     }
 
-    const result = reader.get(ip);
+    const result = reader.get(cleanIp);
     if (!result) {
-      logger.warn(`Nenhum dado encontrado para IP: ${ip}`);
+      logger.warn(`Nenhum dado encontrado para IP: ${cleanIp}`);
       return null;
     }
 
-    return {
-      country: (result.country && result.country.names && result.country.names.en) || '',
-      city: (result.city && result.city.names && result.city.names.en) || '',
-      subdivision: (result.subdivisions && result.subdivisions[0] && result.subdivisions[0].names && result.subdivisions[0].names.en) || '',
-      postal: (result.postal && result.postal.code) || '',
-      latitude: (result.location && result.location.latitude) || null,
-      longitude: (result.location && result.location.longitude) || null,
-      timezone: (result.location && result.location.time_zone) || ''
+    // Validar e extrair dados com tratamento de erros
+    const location = {
+      country: '',
+      city: '',
+      subdivision: '',
+      postal: '',
+      latitude: null,
+      longitude: null,
+      timezone: ''
     };
+
+    try {
+      if (result.country && result.country.names && result.country.names.en) {
+        location.country = result.country.names.en;
+      }
+    } catch (error) {
+      logger.warn('Erro ao extrair país:', error);
+    }
+
+    try {
+      if (result.city && result.city.names && result.city.names.en) {
+        location.city = result.city.names.en;
+      }
+    } catch (error) {
+      logger.warn('Erro ao extrair cidade:', error);
+    }
+
+    try {
+      if (result.subdivisions && result.subdivisions[0] && result.subdivisions[0].names && result.subdivisions[0].names.en) {
+        location.subdivision = result.subdivisions[0].names.en;
+      }
+    } catch (error) {
+      logger.warn('Erro ao extrair subdivisão:', error);
+    }
+
+    try {
+      if (result.postal && result.postal.code) {
+        location.postal = result.postal.code;
+      }
+    } catch (error) {
+      logger.warn('Erro ao extrair código postal:', error);
+    }
+
+    try {
+      if (result.location) {
+        if (typeof result.location.latitude === 'number') {
+          location.latitude = result.location.latitude;
+        }
+        if (typeof result.location.longitude === 'number') {
+          location.longitude = result.location.longitude;
+        }
+        if (result.location.time_zone) {
+          location.timezone = result.location.time_zone;
+        }
+      }
+    } catch (error) {
+      logger.warn('Erro ao extrair coordenadas e timezone:', error);
+    }
+
+    return location;
   } catch (error) {
     logger.error(`Erro ao buscar localização para IP ${ip}:`, error);
     return null;
