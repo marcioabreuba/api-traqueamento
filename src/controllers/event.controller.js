@@ -74,19 +74,16 @@ const createEvent = catchAsync(async (req, res) => {
     // Garantir que statusCode sempre é um valor válido
     let statusCode = httpStatus.INTERNAL_SERVER_ERROR; // 500 como padrão
 
-    try {
-      if (error.statusCode && 
-          Number.isInteger(parseInt(error.statusCode, 10)) && 
-          parseInt(error.statusCode, 10) >= 100 && 
-          parseInt(error.statusCode, 10) <= 599) {
-        statusCode = parseInt(error.statusCode, 10);
-      } else if (error.statusCode) {
-        logger.error(`Status code inválido: ${error.statusCode}, usando 500 como fallback`);
+    // Verificar se há um status code válido e converter para inteiro se necessário
+    if (error.statusCode) {
+      const parsedStatus = parseInt(error.statusCode, 10);
+      if (!isNaN(parsedStatus) && parsedStatus >= 100 && parsedStatus <= 599) {
+        statusCode = parsedStatus;
       } else {
-        logger.error('Status code não definido, usando 500');
+        logger.error(`Status code inválido: ${error.statusCode}, usando 500 como fallback`);
       }
-    } catch (statusErr) {
-      logger.error(`Erro ao processar status code: ${statusErr.message}`);
+    } else {
+      logger.error('Status code não definido, usando 500');
     }
 
     // Sempre definir um statusCode válido no objeto de erro
