@@ -1,10 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const { Reader } = require('@maxmind/geoip2-node');
+const maxmind = require('maxmind'); // Biblioteca alternativa como fallback
 const logger = require('../config/logger');
 
-// Armazenar a instância do reader do MaxMind
+// Armazenar as instâncias dos readers
 let reader = null;
+let fallbackReader = null;
 
 // Cache para armazenar resultados
 const cache = new Map();
@@ -158,51 +160,55 @@ const initialize = async () => {
       }
     }
 
-    // Abrir o buffer diretamente - melhor performance
-    reader = Reader.openBuffer(dbBuffer);
-    logger.info('Base de dados GeoIP aberta com sucesso');
+    // Inicializar o reader principal (GeoIP2-node)
+    try {
+      reader = Reader.openBuffer(dbBuffer);
+      logger.info('Base de dados GeoIP primária aberta com sucesso');
+    } catch (error) {
+      logger.error(`Erro ao abrir base de dados primária: ${error.message}`);
+      reader = null;
+    }
+    
+    // Inicializar o reader de fallback (maxmind)
+    try {
+      fallbackReader = await maxmind.open(dbPath);
+      logger.info('Base de dados GeoIP de fallback aberta com sucesso');
+    } catch (error) {
+      logger.error(`Erro ao abrir base de dados de fallback: ${error.message}`);
+      fallbackReader = null;
+    }
+
+    // Verificar se pelo menos um reader foi inicializado com sucesso
+    if (!reader && !fallbackReader) {
+      logger.error('Ambos os readers falharam ao inicializar');
+      return false;
+    }
 
     // Testar com IPs conhecidos
     let initializationSuccessful = false;
     
-    // 1. Teste com IPv4 conhecido (Google DNS)
-    try {
-      const ipv4Result = reader.city('8.8.8.8');
-      if (ipv4Result && ipv4Result.country) {
-        logger.info('Teste com IPv4 (8.8.8.8) bem-sucedido');
-        const cityName = ipv4Result.city && ipv4Result.city.names ? ipv4Result.city.names.en || 'N/A' : 'N/A';
-        logger.debug(`Resultado: ${ipv4Result.country.names.en}, ${cityName}`);
+    // Testar o reader principal
+    if (reader) {
+      try {
+        const ipv4Result = reader.city('8.8.8.8');
+        logger.info('Teste com reader principal bem-sucedido');
         initializationSuccessful = true;
+      } catch (error) {
+        logger.warn(`Falha no teste com reader principal: ${error.message}`);
       }
-    } catch (ipv4Error) {
-      logger.error(`Falha no teste com IPv4: ${ipv4Error.message}`);
-    }
-
-    // 2. Teste com IPv6 padrão (Google DNS IPv6)
-    try {
-      const ipv6Result = reader.city('2001:4860:4860::8888');
-      if (ipv6Result && ipv6Result.country) {
-        logger.info('Teste com IPv6 (2001:4860:4860::8888) bem-sucedido');
-        const cityName = ipv6Result.city && ipv6Result.city.names ? ipv6Result.city.names.en || 'N/A' : 'N/A';
-        logger.debug(`Resultado: ${ipv6Result.country.names.en}, ${cityName}`);
-        initializationSuccessful = true;
-      }
-    } catch (ipv6Error) {
-      logger.warn(`Falha no teste com IPv6 padrão: ${ipv6Error.message}`);
     }
     
-    // 3. Teste com IPv6 específico (apenas para diagnóstico adicional)
-    try {
-      // Este é um teste específico adicional, não deve impedir a inicialização
-      reader.city('2804:1054:3016:61b0:8070:e8a8:6f99:3663');
-      logger.info('Teste com IPv6 específico bem-sucedido');
-    } catch (ipv6SpecificError) {
-      // Apenas logar o erro, mas não interferir na inicialização
-      logger.warn(`Erro no teste de diagnóstico com IPv6 específico: ${ipv6SpecificError.message}`);
-      logger.warn('Este erro não afeta o funcionamento normal do serviço');
+    // Testar o reader de fallback
+    if (fallbackReader && !initializationSuccessful) {
+      try {
+        const ipv4Result = fallbackReader.get('8.8.8.8');
+        logger.info('Teste com reader de fallback bem-sucedido');
+        initializationSuccessful = true;
+      } catch (error) {
+        logger.warn(`Falha no teste com reader de fallback: ${error.message}`);
+      }
     }
     
-    // Verificar se pelo menos um dos testes principais foi bem-sucedido
     if (initializationSuccessful) {
       logger.info('Base de dados GeoIP inicializada com sucesso');
       return true;
@@ -237,7 +243,7 @@ const getEmptyLocation = () => ({
  */
 const getLocation = async (ip) => {
   try {
-    if (!reader) {
+    if (!reader && !fallbackReader) {
       logger.warn('Serviço GeoIP não inicializado');
       return getEmptyLocation();
     }
@@ -262,47 +268,108 @@ const getLocation = async (ip) => {
     let locationData = null;
     let errorMessage = null;
 
-    try {
-      // Tentar com o IP original
-      result = reader.city(ip);
-      
-      // Log da resposta completa para diagnóstico
-      logger.debug(`Resposta completa do MaxMind para IP ${ip}: ${JSON.stringify(result, null, 2)}`);
-      
-      // Extrair dados com validação
-      locationData = extractLocationData(result);
-      logger.info(`Localização obtida com sucesso para ${isIpv6 ? 'IPv6' : 'IPv4'}: ${ip}`);
-    } catch (primaryError) {
-      errorMessage = primaryError.message;
-      logger.warn(`Erro ao consultar localização para ${isIpv6 ? 'IPv6' : 'IPv4'} ${ip}: ${errorMessage}`);
-      
-      // Se o IP é IPv6 com formato ::ffff:IPv4, tentar com o IPv4 embutido
-      if (isIpv6 && ip.startsWith('::ffff:')) {
-        const ipv4 = ip.substring(7); // Remover o prefixo ::ffff:
-        if (isValidIp(ipv4)) {
-          logger.info(`Tentando fallback para IPv4 embutido: ${ipv4}`);
-          try {
-            result = reader.city(ipv4);
-            locationData = extractLocationData(result);
-            logger.info(`Localização obtida com fallback para IPv4: ${ipv4}`);
-          } catch (fallbackError) {
-            logger.warn(`Falha no fallback para IPv4 ${ipv4}: ${fallbackError.message}`);
+    // Estratégia 1: Tentar com o reader principal (@maxmind/geoip2-node)
+    if (reader) {
+      try {
+        // Tentar com o IP original
+        result = reader.city(ip);
+        locationData = extractLocationData(result);
+        logger.info(`Localização obtida com sucesso pelo reader principal para ${ip}`);
+      } catch (primaryError) {
+        errorMessage = primaryError.message;
+        logger.warn(`Erro ao consultar localização com reader principal para ${ip}: ${errorMessage}`);
+        
+        // Se o IP é IPv6 com formato ::ffff:IPv4, tentar com o IPv4 embutido
+        if (isIpv6 && ip.startsWith('::ffff:')) {
+          const ipv4 = ip.substring(7); // Remover o prefixo ::ffff:
+          if (isValidIp(ipv4)) {
+            logger.info(`Tentando fallback para IPv4 embutido com reader principal: ${ipv4}`);
+            try {
+              result = reader.city(ipv4);
+              locationData = extractLocationData(result);
+              logger.info(`Localização obtida com fallback para IPv4 com reader principal: ${ipv4}`);
+            } catch (fallbackError) {
+              logger.warn(`Falha no fallback para IPv4 com reader principal ${ipv4}: ${fallbackError.message}`);
+            }
+          }
+        }
+        // Se for IPv4, tentar com formato IPv6 compatível
+        else if (!isIpv6) {
+          const ipv6 = `::ffff:${ip}`;
+          if (isValidIp(ipv6)) {
+            logger.info(`Tentando fallback para IPv6 compatível com reader principal: ${ipv6}`);
+            try {
+              result = reader.city(ipv6);
+              locationData = extractLocationData(result);
+              logger.info(`Localização obtida com fallback para IPv6 com reader principal: ${ipv6}`);
+            } catch (fallbackError) {
+              logger.warn(`Falha no fallback para IPv6 com reader principal ${ipv6}: ${fallbackError.message}`);
+            }
           }
         }
       }
-      // Se for IPv4, tentar com formato IPv6 compatível
-      else if (!isIpv6) {
-        const ipv6 = `::ffff:${ip}`;
-        if (isValidIp(ipv6)) {
-          logger.info(`Tentando fallback para IPv6 compatível: ${ipv6}`);
-          try {
-            result = reader.city(ipv6);
-            locationData = extractLocationData(result);
-            logger.info(`Localização obtida com fallback para IPv6: ${ipv6}`);
-          } catch (fallbackError) {
-            logger.warn(`Falha no fallback para IPv6 ${ipv6}: ${fallbackError.message}`);
+    }
+
+    // Estratégia 2: Se o reader principal falhou, tentar com o reader de fallback (maxmind)
+    if (!locationData && fallbackReader) {
+      try {
+        logger.info(`Tentando obter localização com reader de fallback para ${ip}`);
+        const fallbackResult = fallbackReader.get(ip);
+        
+        if (fallbackResult) {
+          // Converter do formato maxmind para o formato que o serviço espera
+          locationData = {
+            country: fallbackResult.country && fallbackResult.country.names && 
+                    (fallbackResult.country.names.pt || fallbackResult.country.names['pt-BR'] || fallbackResult.country.names.en) || '',
+            city: fallbackResult.city && fallbackResult.city.names && 
+                  (fallbackResult.city.names.pt || fallbackResult.city.names['pt-BR'] || fallbackResult.city.names.en) || '',
+            subdivision: fallbackResult.subdivisions && fallbackResult.subdivisions[0] && 
+                        fallbackResult.subdivisions[0].names && 
+                        (fallbackResult.subdivisions[0].names.pt || fallbackResult.subdivisions[0].names['pt-BR'] || fallbackResult.subdivisions[0].names.en) || '',
+            postal: fallbackResult.postal && fallbackResult.postal.code || '',
+            latitude: (fallbackResult.location && fallbackResult.location.latitude && 
+                      !isNaN(fallbackResult.location.latitude)) ? fallbackResult.location.latitude : null,
+            longitude: (fallbackResult.location && fallbackResult.location.longitude && 
+                      !isNaN(fallbackResult.location.longitude)) ? fallbackResult.location.longitude : null,
+            timezone: fallbackResult.location && fallbackResult.location.timeZone || '',
+            accuracyRadius: fallbackResult.location && fallbackResult.location.accuracyRadius || null
+          };
+          
+          logger.info(`Localização obtida com sucesso pelo reader de fallback para ${ip}`);
+        } else {
+          logger.warn(`Reader de fallback não encontrou dados para ${ip}`);
+        }
+        
+        // Se for IPv6 com IPv4 embutido, tentar com o IPv4
+        if (!locationData && isIpv6 && ip.startsWith('::ffff:')) {
+          const ipv4 = ip.substring(7);
+          if (isValidIp(ipv4)) {
+            logger.info(`Tentando fallback para IPv4 embutido com reader de fallback: ${ipv4}`);
+            const ipv4Result = fallbackReader.get(ipv4);
+            
+            if (ipv4Result) {
+              locationData = {
+                country: ipv4Result.country && ipv4Result.country.names && 
+                        (ipv4Result.country.names.pt || ipv4Result.country.names['pt-BR'] || ipv4Result.country.names.en) || '',
+                city: ipv4Result.city && ipv4Result.city.names && 
+                      (ipv4Result.city.names.pt || ipv4Result.city.names['pt-BR'] || ipv4Result.city.names.en) || '',
+                subdivision: ipv4Result.subdivisions && ipv4Result.subdivisions[0] && 
+                            ipv4Result.subdivisions[0].names && 
+                            (ipv4Result.subdivisions[0].names.pt || ipv4Result.subdivisions[0].names['pt-BR'] || ipv4Result.subdivisions[0].names.en) || '',
+                postal: ipv4Result.postal && ipv4Result.postal.code || '',
+                latitude: (ipv4Result.location && ipv4Result.location.latitude && 
+                          !isNaN(ipv4Result.location.latitude)) ? ipv4Result.location.latitude : null,
+                longitude: (ipv4Result.location && ipv4Result.location.longitude && 
+                          !isNaN(ipv4Result.location.longitude)) ? ipv4Result.location.longitude : null,
+                timezone: ipv4Result.location && ipv4Result.location.timeZone || '',
+                accuracyRadius: ipv4Result.location && ipv4Result.location.accuracyRadius || null
+              };
+              logger.info(`Localização obtida com fallback para IPv4 com reader de fallback: ${ipv4}`);
+            }
           }
         }
+      } catch (fallbackError) {
+        logger.warn(`Erro ao consultar localização com reader de fallback para ${ip}: ${fallbackError.message}`);
       }
     }
 

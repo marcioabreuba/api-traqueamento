@@ -17,7 +17,7 @@
     "test-geoip": "node scripts/test-geoip.js"
   },
   "dependencies": {
-    "@maxmind/geoip2-node": "6.0.0",
+    "@maxmind/geoip2-node": "5.0.0",
     "@prisma/client": "^6.5.0",
     "async": "^3.2.6",
     "axios": "^1.8.4",
