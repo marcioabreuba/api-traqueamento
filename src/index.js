@@ -8,7 +8,8 @@ let server;
 const prisma = new PrismaClient();
 
 // Inicializar a base de dados GeoIP
-geoipService.initialize()
+geoipService
+  .initialize()
   .then((success) => {
     if (success) {
       logger.info('Base de dados GeoIP inicializada com sucesso');

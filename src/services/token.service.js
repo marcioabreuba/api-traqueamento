@@ -42,7 +42,7 @@ const saveToken = async (token, userId, expires, type, blacklisted = false) => {
       expires: expires.toDate(),
       type,
       blacklisted,
-    }
+    },
   });
   return tokenDoc;
 };

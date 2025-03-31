@@ -36,20 +36,25 @@ app.use(express.urlencoded({ extended: true }));
 app.use(compression());
 
 // enable cors
-app.use(cors({
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Event-ID']
-}));
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Event-ID'],
+  }),
+);
 
 // Configuração específica para OPTIONS
-app.options('*', cors({
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Event-ID']
-}));
+app.options(
+  '*',
+  cors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Event-ID'],
+  }),
+);
 
 // jwt authentication
 app.use(passport.initialize());
@@ -66,7 +71,7 @@ app.get('/', (req, res) => {
     status: 'success',
     message: 'API de Traqueamento está funcionando!',
     version: '1.0.0',
-    environment: config.env
+    environment: config.env,
   });
 });
 

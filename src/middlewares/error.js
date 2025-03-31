@@ -1,33 +1,33 @@
 const httpStatus = require('http-status');
+const { Prisma } = require('@prisma/client');
 const config = require('../config/config');
 const logger = require('../config/logger');
 const ApiError = require('../utils/ApiError');
-const { Prisma } = require('@prisma/client');
 
 /**
  * Converte erros genéricos para ApiError
  */
 const errorConverter = (err, req, res, next) => {
   let error = err;
-  
+
   // Se não for uma instância de ApiError, converter
   if (!(error instanceof ApiError)) {
     // Determinar código de status apropriado
-    let statusCode = error.statusCode;
-    
+    let { statusCode } = error;
+
     // Verificar se é um erro conhecido do Prisma e atribuir BAD_REQUEST
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       statusCode = httpStatus.BAD_REQUEST;
-    } 
+    }
     // Tratar códigos de status desconhecidos como erros internos
     else if (!statusCode || !Number.isInteger(statusCode) || statusCode < 100 || statusCode > 599) {
       statusCode = httpStatus.INTERNAL_SERVER_ERROR;
     }
-    
+
     const message = error.message || httpStatus[statusCode];
     error = new ApiError(statusCode, message, error.details || '', false, err.stack);
   }
-  
+
   next(error);
 };
 
@@ -38,19 +38,20 @@ const errorHandler = (err, req, res, next) => {
   try {
     // A classe ApiError já garante que statusCode é válido
     let statusCode = 500; // Valor padrão
-    
+
     // Verificar se existe statusCode e se é um número válido
-    if (typeof err.statusCode === 'number' && 
-        Number.isInteger(err.statusCode) && 
-        err.statusCode >= 100 && 
-        err.statusCode <= 599) {
+    if (
+      typeof err.statusCode === 'number' &&
+      Number.isInteger(err.statusCode) &&
+      err.statusCode >= 100 &&
+      err.statusCode <= 599
+    ) {
       statusCode = err.statusCode;
     }
-    
+
     // Garantir que a mensagem seja uma string válida
-    const message = (err.message && typeof err.message === 'string') 
-      ? err.message 
-      : httpStatus[statusCode] || 'Erro interno do servidor';
+    const message =
+      err.message && typeof err.message === 'string' ? err.message : httpStatus[statusCode] || 'Erro interno do servidor';
 
     // Construir objeto de resposta
     const response = {
@@ -58,12 +59,12 @@ const errorHandler = (err, req, res, next) => {
       code: statusCode,
       message,
     };
-    
+
     // Adicionar detalhes se existirem
     if (err.details) {
       response.details = err.details;
     }
-    
+
     // Incluir stack trace em desenvolvimento
     if (config.env === 'development') {
       response.stack = err.stack;
@@ -77,7 +78,7 @@ const errorHandler = (err, req, res, next) => {
         path: req.path,
         method: req.method,
         ip: req.ip,
-        body: req.body ? JSON.stringify(req.body, null, 2) : undefined
+        body: req.body ? JSON.stringify(req.body, null, 2) : undefined,
       });
     }
 
@@ -86,11 +87,11 @@ const errorHandler = (err, req, res, next) => {
   } catch (error) {
     // Fallback para caso de erro no próprio errorHandler
     logger.error('Erro crítico no errorHandler:', error);
-    
+
     return res.status(500).json({
       success: false,
       code: 500,
-      message: 'Erro interno do servidor'
+      message: 'Erro interno do servidor',
     });
   }
 };

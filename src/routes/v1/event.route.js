@@ -7,24 +7,16 @@ const eventController = require('../../controllers/event.controller');
 const router = express.Router();
 
 // Rota principal para envio de eventos
-router
-  .route('/send')
-  .post(validate(eventValidation.createEvent.body), eventController.createEvent);
+router.route('/send').post(validate(eventValidation.createEvent.body), eventController.createEvent);
 
 // Rota para consulta de eventos
-router
-  .route('/')
-  .get(auth('getEvents'), validate(eventValidation.getEvents.query), eventController.getEvents);
+router.route('/').get(auth('getEvents'), validate(eventValidation.getEvents.query), eventController.getEvents);
 
 // Rota para obter evento específico
-router
-  .route('/:eventId')
-  .get(auth('getEvents'), validate(eventValidation.getEvent.params), eventController.getEvent);
+router.route('/:eventId').get(auth('getEvents'), validate(eventValidation.getEvent.params), eventController.getEvent);
 
 // Rota para domínio/produto específico
-router
-  .route('/domain/:domain')
-  .post(validate(eventValidation.createEvent.body), eventController.createEvent);
+router.route('/domain/:domain').post(validate(eventValidation.createEvent.body), eventController.createEvent);
 
 module.exports = router;
 
@@ -222,4 +214,4 @@ module.exports = router;
  *               $ref: '#/components/schemas/Event'
  *       "400":
  *         $ref: '#/components/responses/BadRequest'
- */ 
+ */

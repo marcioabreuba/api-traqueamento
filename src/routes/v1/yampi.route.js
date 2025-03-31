@@ -4,8 +4,6 @@ const auth = require('../../middlewares/auth');
 
 const router = express.Router();
 
-router
-  .route('/webhook')
-  .post(yampiController.processWebhook);
+router.route('/webhook').post(yampiController.processWebhook);
 
-module.exports = router; 
+module.exports = router;

@@ -5,17 +5,17 @@ const maxmind = require('maxmind');
 async function testGeoIP() {
   try {
     console.log('Iniciando teste da base de dados GeoIP...');
-    
+
     // Tentar diferentes caminhos possíveis
     const possiblePaths = [
       path.join(process.cwd(), 'data', 'GeoLite2-City.mmdb'),
       path.join(__dirname, 'data', 'GeoLite2-City.mmdb'),
       'data/GeoLite2-City.mmdb',
-      './data/GeoLite2-City.mmdb'
+      './data/GeoLite2-City.mmdb',
     ];
 
     let dbPath = null;
-    
+
     // Encontrar o primeiro caminho válido
     for (const testPath of possiblePaths) {
       console.log(`Tentando caminho: ${testPath}`);
@@ -61,4 +61,4 @@ async function testGeoIP() {
   }
 }
 
-testGeoIP(); 
+testGeoIP();

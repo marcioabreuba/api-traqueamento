@@ -14,4 +14,4 @@ try {
 } catch (error) {
   console.error('Erro ao executar migrações:', error);
   process.exit(1);
-} 
+}

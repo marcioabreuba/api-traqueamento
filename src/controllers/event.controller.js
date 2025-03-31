@@ -16,29 +16,21 @@ const createEvent = catchAsync(async (req, res) => {
 
     // Verificar se o corpo da requisição está vazio
     if (!req.body || Object.keys(req.body).length === 0) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Corpo da requisição vazio ou inválido',
-        'EmptyRequestBodyError'
-      );
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Corpo da requisição vazio ou inválido', 'EmptyRequestBodyError');
     }
 
     // Validar dados do evento
     try {
       // Validação corrigida: Certifique-se de que o schema permite o campo "app"
-      const { error } = eventValidation.createEvent.body.validate(req.body, { 
+      const { error } = eventValidation.createEvent.body.validate(req.body, {
         allowUnknown: false,
-        abortEarly: false // Retorna todos os erros ao invés de apenas o primeiro
+        abortEarly: false, // Retorna todos os erros ao invés de apenas o primeiro
       });
-      
+
       if (error) {
         const errorDetails = error.details.map((x) => x.message).join(', ');
         logger.error(`Erro na validação dos dados: ${errorDetails}`);
-        throw new ApiError(
-          httpStatus.BAD_REQUEST, 
-          `Erro de validação: ${errorDetails}`, 
-          error.details
-        );
+        throw new ApiError(httpStatus.BAD_REQUEST, `Erro de validação: ${errorDetails}`, error.details);
       }
     } catch (error) {
       logger.error(`Erro na validação dos dados: ${error.message}`);
@@ -47,7 +39,7 @@ const createEvent = catchAsync(async (req, res) => {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
           `Erro de validação: ${error.message}`,
-          error.details || 'Erro na validação de dados'
+          error.details || 'Erro na validação de dados',
         );
       }
       throw error; // Se já for uma ApiError, apenas propague
@@ -64,22 +56,22 @@ const createEvent = catchAsync(async (req, res) => {
   } catch (originalError) {
     // Garantir que sempre temos um erro com objeto e mensagem
     let error = originalError;
-    
+
     if (!error) {
       error = new Error('Erro desconhecido durante processamento do evento');
     }
-    
+
     if (typeof error === 'string') {
       error = new Error(error);
     }
-    
+
     // Garantir que a mensagem de erro sempre existe
     const errorMessage = error.message || 'Erro desconhecido';
     logger.error(`Erro ao processar evento: ${errorMessage}`);
-    
+
     // Garantir que statusCode sempre é um valor válido
     let statusCode = httpStatus.INTERNAL_SERVER_ERROR; // 500 como padrão
-    
+
     if (error.statusCode) {
       if (Number.isInteger(error.statusCode) && error.statusCode >= 100 && error.statusCode <= 599) {
         statusCode = error.statusCode;
@@ -89,11 +81,11 @@ const createEvent = catchAsync(async (req, res) => {
     } else {
       logger.error('Status code não definido, usando 500');
     }
-    
+
     // Sempre definir um statusCode válido no objeto de erro
     error.statusCode = statusCode;
     logger.error(`Status code final do erro: ${statusCode}`);
-    
+
     logger.error(`É instância de ApiError? ${error instanceof ApiError}`);
 
     // Tratamento específico para erros de validação
@@ -102,30 +94,30 @@ const createEvent = catchAsync(async (req, res) => {
         success: false,
         error: errorMessage,
         details: error.details || 'Erro na validação dos dados',
-        code: httpStatus.BAD_REQUEST
+        code: httpStatus.BAD_REQUEST,
       });
     }
 
     // Tratamento de erros ApiError
     if (error instanceof ApiError) {
       logger.error(`Erro detalhado [${statusCode}]: ${errorMessage}`);
-      
+
       return res.status(statusCode).json({
         success: false,
         error: errorMessage,
         details: error.details || 'Erro interno',
-        code: statusCode
+        code: statusCode,
       });
     }
 
     // Fallback para erros não tratados
     logger.error(`Erro detalhado [${statusCode}]: ${errorMessage}`);
-    
+
     return res.status(statusCode).json({
       success: false,
       error: 'Erro interno do servidor ao processar evento',
       details: errorMessage,
-      code: statusCode
+      code: statusCode,
     });
   }
 });

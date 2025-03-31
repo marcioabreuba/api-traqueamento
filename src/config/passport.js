@@ -15,8 +15,8 @@ const jwtVerify = async (payload, done) => {
     }
     const user = await prisma.user.findUnique({
       where: {
-        id: payload.sub
-      }
+        id: payload.sub,
+      },
     });
     if (!user) {
       return done(null, false);

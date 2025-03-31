@@ -25,7 +25,7 @@ const getPixelConfig = async (eventData, domain) => {
     return {
       pixelId: eventData.pixel_id,
       accessToken: config.facebook.accessToken,
-      testCode: config.facebook.testCode
+      testCode: config.facebook.testCode,
     };
   }
 
@@ -34,12 +34,9 @@ const getPixelConfig = async (eventData, domain) => {
     try {
       const pixelConfig = await prisma.pixelConfig.findFirst({
         where: {
-          OR: [
-            { domain },
-            { pixelId: domain }
-          ],
-          isActive: true
-        }
+          OR: [{ domain }, { pixelId: domain }],
+          isActive: true,
+        },
       });
 
       if (pixelConfig) {
@@ -47,15 +44,12 @@ const getPixelConfig = async (eventData, domain) => {
         return {
           pixelId: pixelConfig.pixelId,
           accessToken: pixelConfig.accessToken,
-          testCode: pixelConfig.testCode
+          testCode: pixelConfig.testCode,
         };
       }
     } catch (error) {
       logger.error('Erro ao buscar configuração do pixel:', error);
-      throw new ApiError(
-        httpStatus.INTERNAL_SERVER_ERROR,
-        'Erro ao buscar configuração do pixel'
-      );
+      throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Erro ao buscar configuração do pixel');
     }
   }
 
@@ -65,15 +59,12 @@ const getPixelConfig = async (eventData, domain) => {
     return {
       pixelId: config.facebook.pixelId,
       accessToken: config.facebook.accessToken,
-      testCode: config.facebook.testCode
+      testCode: config.facebook.testCode,
     };
   }
 
   // Se nenhuma configuração foi encontrada
-  throw new ApiError(
-    httpStatus.BAD_REQUEST,
-    'Nenhuma configuração de pixel encontrada para o domínio fornecido'
-  );
+  throw new ApiError(httpStatus.BAD_REQUEST, 'Nenhuma configuração de pixel encontrada para o domínio fornecido');
 };
 
 /**
@@ -87,12 +78,7 @@ const validateEventData = (eventData) => {
   // Garantir que eventData não seja null ou undefined
   if (!eventData) {
     logger.error('Dados do evento ausentes ou inválidos');
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      'Dados do evento ausentes ou inválidos',
-      'EventDataInvalidError',
-      true
-    );
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Dados do evento ausentes ou inválidos', 'EventDataInvalidError', true);
   }
 
   // Log de debug para entender o conteúdo exato
@@ -100,7 +86,7 @@ const validateEventData = (eventData) => {
 
   // Validar campos obrigatórios
   const requiredFields = ['event_name'];
-  const missingFields = requiredFields.filter(field => {
+  const missingFields = requiredFields.filter((field) => {
     const value = eventData[field];
     // Verificar se o campo está ausente ou vazio
     return value === undefined || value === null || value === '';
@@ -113,7 +99,7 @@ const validateEventData = (eventData) => {
       httpStatus.BAD_REQUEST,
       `Campos obrigatórios ausentes: ${missingFields.join(', ')}`,
       'MissingFieldsError',
-      true
+      true,
     );
   }
 
@@ -121,12 +107,7 @@ const validateEventData = (eventData) => {
   if (eventData.pixel_id) {
     if (!/^\d+$/.test(eventData.pixel_id)) {
       logger.error(`Pixel ID inválido: ${eventData.pixel_id}`);
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Pixel ID deve conter apenas números',
-        'InvalidPixelIdError',
-        true
-      );
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Pixel ID deve conter apenas números', 'InvalidPixelIdError', true);
     }
     logger.info(`Pixel ID válido fornecido: ${eventData.pixel_id}`);
   } else {
@@ -138,12 +119,7 @@ const validateEventData = (eventData) => {
     const eventTime = parseInt(eventData.event_time, 10);
     if (Number.isNaN(eventTime) || eventTime < 0) {
       logger.error(`Event time inválido: ${eventData.event_time}`);
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Event time deve ser um timestamp válido',
-        'InvalidEventTimeError',
-        true
-      );
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Event time deve ser um timestamp válido', 'InvalidEventTimeError', true);
     }
   }
 
@@ -157,12 +133,7 @@ const validateEventData = (eventData) => {
       }
     } catch (error) {
       logger.error(`URL inválida: ${eventData.event_source_url}`);
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'URL de origem inválida',
-        'InvalidUrlError',
-        true
-      );
+      throw new ApiError(httpStatus.BAD_REQUEST, 'URL de origem inválida', 'InvalidUrlError', true);
     }
   }
 
@@ -171,12 +142,7 @@ const validateEventData = (eventData) => {
     const value = parseFloat(eventData.custom_data.value);
     if (Number.isNaN(value) || value < 0) {
       logger.error(`Valor inválido: ${eventData.custom_data.value}`);
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Valor deve ser um número positivo',
-        'InvalidValueError',
-        true
-      );
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Valor deve ser um número positivo', 'InvalidValueError', true);
     }
   }
 
@@ -214,15 +180,14 @@ const createEvent = async (eventData, clientIp) => {
           ...eventData,
           userData: {
             ...(eventData.userData || {}),
-            ...geoData
-          }
+            ...geoData,
+          },
         };
 
         // Substituir eventData pela versão enriquecida
         return processEventWithGeoData(enrichedEventData, eventData.pixelId);
-      } else {
-        logger.warn(`Nenhum dado de geolocalização encontrado para IP ${ip}`);
       }
+      logger.warn(`Nenhum dado de geolocalização encontrado para IP ${ip}`);
     }
 
     // Garantir que o pixelId esteja definido
@@ -230,11 +195,7 @@ const createEvent = async (eventData, clientIp) => {
       eventData.pixelId = config.facebook.pixelId;
       if (!eventData.pixelId) {
         logger.error('Pixel ID não configurado');
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          'Pixel ID não configurado',
-          true
-        );
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Pixel ID não configurado', true);
       }
       logger.info(`Usando Pixel ID padrão: ${eventData.pixelId}`);
     }
@@ -283,7 +244,7 @@ const createEvent = async (eventData, clientIp) => {
       'Erro ao processar evento',
       error.message || 'Erro desconhecido',
       true,
-      error.stack
+      error.stack,
     );
   }
 };
@@ -295,7 +256,7 @@ const createEvent = async (eventData, clientIp) => {
  */
 const getEventById = async (id) => {
   return prisma.event.findUnique({
-    where: { id }
+    where: { id },
   });
 };
 
@@ -313,7 +274,7 @@ const queryEvents = async (filter, options) => {
   const limit = options.limit !== undefined && options.limit !== null ? options.limit : 10;
   const skip = (page - 1) * limit;
 
-  let orderBy = {};
+  const orderBy = {};
   if (options.sortBy) {
     const parts = options.sortBy.split(':');
     orderBy[parts[0]] = parts[1] === 'desc' ? 'desc' : 'asc';
@@ -324,9 +285,9 @@ const queryEvents = async (filter, options) => {
       where: filter,
       skip,
       take: limit,
-      orderBy
+      orderBy,
     }),
-    prisma.event.count({ where: filter })
+    prisma.event.count({ where: filter }),
   ]);
 
   return {
@@ -334,7 +295,7 @@ const queryEvents = async (filter, options) => {
     page,
     limit,
     totalPages: Math.ceil(totalItems / limit),
-    totalResults: totalItems
+    totalResults: totalItems,
   };
 };
 
@@ -364,22 +325,24 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
     // Preparar dados do evento com valores padrão onde necessário
     const eventToSave = {
       pixelId: pixelConfig.pixelId,
-      eventName: eventName,
-      eventTime: eventTime,
+      eventName,
+      eventTime,
       userData: {
-        email: eventData.user_data && eventData.user_data.email || '',
-        phone: eventData.user_data && eventData.user_data.phone || '',
-        firstName: eventData.user_data && eventData.user_data.first_name || '',
-        lastName: eventData.user_data && eventData.user_data.last_name || '',
-        externalId: eventData.user_data && eventData.user_data.external_id || '',
-        ip: eventData.user_data && eventData.user_data.ip_address || '',
+        email: (eventData.user_data && eventData.user_data.email) || '',
+        phone: (eventData.user_data && eventData.user_data.phone) || '',
+        firstName: (eventData.user_data && eventData.user_data.first_name) || '',
+        lastName: (eventData.user_data && eventData.user_data.last_name) || '',
+        externalId: (eventData.user_data && eventData.user_data.external_id) || '',
+        ip: (eventData.user_data && eventData.user_data.ip_address) || '',
         userAgent: (eventData.user_data && eventData.user_data.client_user_agent) || eventData.client_user_agent || '',
-        city: eventData.user_data && eventData.user_data.city || '',
-        state: eventData.user_data && eventData.user_data.state || '',
-        country: eventData.user_data && eventData.user_data.country || '',
-        zipCode: eventData.user_data && eventData.user_data.zip_code || '',
-        fbp: ((eventData.user_data && eventData.user_data.fbp !== null) ? eventData.user_data.fbp : '') ||
-          ((eventData.fbp !== null) ? eventData.fbp : '') || '',
+        city: (eventData.user_data && eventData.user_data.city) || '',
+        state: (eventData.user_data && eventData.user_data.state) || '',
+        country: (eventData.user_data && eventData.user_data.country) || '',
+        zipCode: (eventData.user_data && eventData.user_data.zip_code) || '',
+        fbp:
+          (eventData.user_data && eventData.user_data.fbp !== null ? eventData.user_data.fbp : '') ||
+          (eventData.fbp !== null ? eventData.fbp : '') ||
+          '',
         sourceUrl: eventData.event_source_url || '',
         referrer: eventData.referrer || '',
         domain: domainOrPixelId || '',
@@ -425,7 +388,7 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         pixelConfig.pixelId,
         pixelConfig.accessToken,
         fbDataToSend,
-        pixelConfig.testCode
+        pixelConfig.testCode,
       );
 
       // Atualizar evento com resposta do Facebook
@@ -440,7 +403,7 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
           responseDataToSave = typeof fbResponse === 'object' ? fbResponse : { response: fbResponse };
 
           // Tratar o ID do evento extraído da resposta
-            fbEventId = fbResponse.fbtrace_id;
+          fbEventId = fbResponse.fbtrace_id;
         }
 
         logger.info(`Atualizando evento ${savedEvent.id} com status 'sent'`);
@@ -453,10 +416,8 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
             status: 'sent',
             responseData: responseDataToSave,
             fbEventId,
-          }
+          },
         });
-        
-
 
         // Retornar o evento atualizado
         return updatedEvent;
@@ -489,9 +450,9 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
           where: { id: savedEvent.id },
           data: {
             status: 'failed',
-            errorMessage: errorMessage,
-            updatedAt: new Date()
-          }
+            errorMessage,
+            updatedAt: new Date(),
+          },
         });
 
         // Depois de atualizar com sucesso, propagar o erro com um status code apropriado
@@ -499,10 +460,12 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         let statusCode = httpStatus.BAD_GATEWAY; // 502 como padrão para falhas de comunicação externa
 
         // Se o erro original tiver um código de status válido, usá-lo
-        if (sendError.statusCode &&
+        if (
+          sendError.statusCode &&
           Number.isInteger(sendError.statusCode) &&
           sendError.statusCode >= 100 &&
-          sendError.statusCode <= 599) {
+          sendError.statusCode <= 599
+        ) {
           statusCode = sendError.statusCode;
         } else if (sendError.response && sendError.response.status) {
           // Para erros do Axios
@@ -517,7 +480,7 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
           `Erro ao enviar evento para o Facebook: ${errorMessage}`,
           'FacebookSendError',
           true,
-          sendError.stack
+          sendError.stack,
         );
       } catch (updateError) {
         // Se falhar ao atualizar o evento no banco
@@ -531,21 +494,17 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         // Definir um status code válido
         let statusCode = httpStatus.INTERNAL_SERVER_ERROR;
 
-        if (sendError instanceof ApiError &&
+        if (
+          sendError instanceof ApiError &&
           sendError.statusCode &&
           Number.isInteger(sendError.statusCode) &&
           sendError.statusCode >= 100 &&
-          sendError.statusCode <= 599) {
+          sendError.statusCode <= 599
+        ) {
           statusCode = sendError.statusCode;
         }
 
-        throw new ApiError(
-          statusCode,
-          combinedMessage,
-          'FacebookSendAndUpdateError',
-          true,
-          sendError.stack
-        );
+        throw new ApiError(statusCode, combinedMessage, 'FacebookSendAndUpdateError', true, sendError.stack);
       }
     }
   } catch (originalError) {
@@ -575,9 +534,9 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
           where: { id: savedEvent.id },
           data: {
             status: 'error',
-            errorMessage: errorMessage,
-            updatedAt: new Date()
-          }
+            errorMessage,
+            updatedAt: new Date(),
+          },
         });
 
         logger.info(`Status do evento ${savedEvent.id} atualizado para 'error'`);
@@ -613,17 +572,11 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
         error.message,
         error.isOperational ? error.name : 'EventProcessingError',
         error.isOperational,
-        error.stack
+        error.stack,
       );
     } else {
       // Caso não seja um ApiError, criar um novo com status code válido
-      throw new ApiError(
-        statusCode,
-        `Erro ao processar evento: ${errorMessage}`,
-        'EventProcessingError',
-        true,
-        error.stack
-      );
+      throw new ApiError(statusCode, `Erro ao processar evento: ${errorMessage}`, 'EventProcessingError', true, error.stack);
     }
   }
 };
@@ -645,12 +598,7 @@ const processEvent = async (eventDataInput, domainOrPixelId) => {
 
     // Garantir que eventData é um objeto
     if (!eventDataInput || typeof eventDataInput !== 'object') {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Dados do evento inválidos',
-        'InvalidEventDataError',
-        true
-      );
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Dados do evento inválidos', 'InvalidEventDataError', true);
     }
 
     // Trabalhar com uma cópia do objeto para evitar mutação
@@ -660,8 +608,7 @@ const processEvent = async (eventDataInput, domainOrPixelId) => {
     validateEventData(eventData);
 
     // Extrair IP do cliente
-    const ip = (eventData.userData && eventData.userData.ip) ||
-      (eventData.user_data && eventData.user_data.ip_address);
+    const ip = (eventData.userData && eventData.userData.ip) || (eventData.user_data && eventData.user_data.ip_address);
     logger.info(`IP do cliente extraído: ${ip || 'não disponível'}`);
 
     // Enriquecer dados com GeoIP
@@ -677,17 +624,16 @@ const processEvent = async (eventDataInput, domainOrPixelId) => {
           ...eventData,
           userData: {
             ...(eventData.userData || {}),
-            ...geoData
-          }
+            ...geoData,
+          },
         };
 
         logger.info('Dados de geolocalização enriquecidos com sucesso');
 
         // Continuar processamento com dados enriquecidos
         return processData(enrichedEventData, domainOrPixelId);
-      } else {
-        logger.warn(`Nenhum dado de geolocalização encontrado para IP ${ip}`);
       }
+      logger.warn(`Nenhum dado de geolocalização encontrado para IP ${ip}`);
     }
 
     // Se não houver enriquecimento com GeoIP, continuar o processamento normal
@@ -731,22 +677,10 @@ const processEvent = async (eventDataInput, domainOrPixelId) => {
 
     // Caso seja um ApiError, criar uma cópia com statusCode correto
     if (error instanceof ApiError) {
-      throw new ApiError(
-        statusCode,
-        error.message,
-        error.name || 'EventProcessingError',
-        error.isOperational,
-        error.stack
-      );
+      throw new ApiError(statusCode, error.message, error.name || 'EventProcessingError', error.isOperational, error.stack);
     } else {
       // Caso não seja um ApiError, criar um novo com status code válido
-      throw new ApiError(
-        statusCode,
-        `Erro ao processar evento: ${errorMessage}`,
-        'EventProcessingError',
-        true,
-        error.stack
-      );
+      throw new ApiError(statusCode, `Erro ao processar evento: ${errorMessage}`, 'EventProcessingError', true, error.stack);
     }
   }
 };

@@ -26,5 +26,5 @@ const processWebhook = catchAsync(async (req, res) => {
 });
 
 module.exports = {
-  processWebhook
-}; 
+  processWebhook,
+};

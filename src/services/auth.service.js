@@ -29,16 +29,16 @@ const logout = async (refreshToken) => {
     where: {
       token: refreshToken,
       type: tokenTypes.REFRESH,
-      blacklisted: false
-    }
+      blacklisted: false,
+    },
   });
-  
+
   if (!refreshTokenDoc) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Token não encontrado');
   }
-  
+
   await prisma.token.delete({
-    where: { id: refreshTokenDoc.id }
+    where: { id: refreshTokenDoc.id },
   });
 };
 
@@ -55,7 +55,7 @@ const refreshAuth = async (refreshToken) => {
       throw new Error();
     }
     await prisma.token.delete({
-      where: { id: refreshTokenDoc.id }
+      where: { id: refreshTokenDoc.id },
     });
     return tokenService.generateAuthTokens(user);
   } catch (error) {
@@ -77,7 +77,7 @@ const resetPassword = async (resetPasswordToken, newPassword) => {
       throw new Error();
     }
     await prisma.token.delete({
-      where: { id: resetPasswordTokenDoc.id }
+      where: { id: resetPasswordTokenDoc.id },
     });
     await userService.updateUserById(user.id, { password: newPassword });
   } catch (error) {
@@ -98,7 +98,7 @@ const verifyEmail = async (verifyEmailToken) => {
       throw new Error();
     }
     await prisma.token.delete({
-      where: { id: verifyEmailTokenDoc.id }
+      where: { id: verifyEmailTokenDoc.id },
     });
     await userService.updateUserById(user.id, { isEmailVerified: true });
   } catch (error) {

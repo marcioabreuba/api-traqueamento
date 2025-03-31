@@ -1,7 +1,7 @@
 const validator = require('validator');
+const httpStatus = require('http-status');
 const logger = require('../config/logger');
 const ApiError = require('./ApiError');
-const httpStatus = require('http-status');
 
 const validateEmail = (email) => {
   if (!email) return null;
@@ -20,14 +20,7 @@ const validateCoordinates = (lat, lng) => {
   if (!lat || !lng) return null;
   const latitude = parseFloat(lat);
   const longitude = parseFloat(lng);
-  return (
-    !isNaN(latitude) &&
-    !isNaN(longitude) &&
-    latitude >= -90 &&
-    latitude <= 90 &&
-    longitude >= -180 &&
-    longitude <= 180
-  )
+  return !isNaN(latitude) && !isNaN(longitude) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180
     ? { latitude, longitude }
     : null;
 };
@@ -55,9 +48,7 @@ const normalizeLocation = (location) => {
     city: location.city ? location.city.trim().toLowerCase() : null,
     state: location.state ? location.state.trim().toUpperCase() : null,
     country: location.country ? location.country.trim().toUpperCase() : null,
-    coordinates: location.latitude && location.longitude
-      ? validateCoordinates(location.latitude, location.longitude)
-      : null
+    coordinates: location.latitude && location.longitude ? validateCoordinates(location.latitude, location.longitude) : null,
   };
 };
 
@@ -71,7 +62,7 @@ const validateUserData = (userData) => {
     state: userData.state ? userData.state.trim().toUpperCase() : null,
     country: userData.country ? userData.country.trim().toUpperCase() : null,
     user_agent: userData.user_agent || null,
-    ip_address: userData.ip_address || null
+    ip_address: userData.ip_address || null,
   };
 
   // Remove campos nulos
@@ -89,7 +80,7 @@ const validateEventData = (eventData) => {
 
   // Validar campos obrigatórios
   const requiredFields = ['event_name', 'pixel_id'];
-  const missingFields = requiredFields.filter(field => {
+  const missingFields = requiredFields.filter((field) => {
     const value = eventData[field];
     const isMissing = value === undefined || value === null || value === '';
     if (isMissing) {
@@ -101,30 +92,21 @@ const validateEventData = (eventData) => {
   if (missingFields.length > 0) {
     const errorMessage = `Campos obrigatórios ausentes: ${missingFields.join(', ')}`;
     logger.error(errorMessage);
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      errorMessage
-    );
+    throw new ApiError(httpStatus.BAD_REQUEST, errorMessage);
   }
 
   // Validar formato do pixel_id
   if (!/^\d+$/.test(eventData.pixel_id)) {
     const errorMessage = 'pixel_id deve conter apenas números';
     logger.error(errorMessage);
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      errorMessage
-    );
+    throw new ApiError(httpStatus.BAD_REQUEST, errorMessage);
   }
 
   // Validar formato do event_name
   if (typeof eventData.event_name !== 'string' || eventData.event_name.trim().length === 0) {
     const errorMessage = 'event_name deve ser uma string não vazia';
     logger.error(errorMessage);
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      errorMessage
-    );
+    throw new ApiError(httpStatus.BAD_REQUEST, errorMessage);
   }
 
   const validated = {
@@ -139,7 +121,7 @@ const validateEventData = (eventData) => {
     content_ids: Array.isArray(eventData.content_ids) ? eventData.content_ids : null,
     content_type: eventData.content_type || null,
     user_data: validateUserData(eventData.user_data),
-    custom_data: eventData.custom_data || null
+    custom_data: eventData.custom_data || null,
   };
 
   // Remove campos nulos
@@ -155,5 +137,5 @@ module.exports = {
   validateCurrency,
   normalizeLocation,
   validateUserData,
-  validateEventData
-}; 
+  validateEventData,
+};

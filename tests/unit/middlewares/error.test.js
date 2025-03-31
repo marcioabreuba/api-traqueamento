@@ -30,7 +30,7 @@ describe('Error middlewares', () => {
           statusCode: error.statusCode,
           message: error.message,
           isOperational: false,
-        })
+        }),
       );
     });
 
@@ -49,7 +49,7 @@ describe('Error middlewares', () => {
           statusCode: httpStatus.BAD_REQUEST,
           message: error.message,
           isOperational: false,
-        })
+        }),
       );
     });
 
@@ -65,7 +65,7 @@ describe('Error middlewares', () => {
           statusCode: httpStatus.INTERNAL_SERVER_ERROR,
           message: error.message,
           isOperational: false,
-        })
+        }),
       );
     });
 
@@ -82,7 +82,7 @@ describe('Error middlewares', () => {
           statusCode: error.statusCode,
           message: httpStatus[error.statusCode],
           isOperational: false,
-        })
+        }),
       );
     });
 
@@ -98,7 +98,7 @@ describe('Error middlewares', () => {
           statusCode: httpStatus.INTERNAL_SERVER_ERROR,
           message: httpStatus[httpStatus.INTERNAL_SERVER_ERROR],
           isOperational: false,
-        })
+        }),
       );
     });
   });
@@ -115,10 +115,12 @@ describe('Error middlewares', () => {
 
       errorHandler(error, httpMocks.createRequest(), res);
 
-      expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({
-        code: error.statusCode,
-        message: error.message,
-      }));
+      expect(sendSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: error.statusCode,
+          message: error.message,
+        }),
+      );
       expect(res.locals.errorMessage).toBe(error.message);
     });
 
@@ -135,7 +137,7 @@ describe('Error middlewares', () => {
           code: error.statusCode,
           message: error.message,
           stack: error.stack,
-        })
+        }),
       );
       config.env = process.env.NODE_ENV;
     });
@@ -152,7 +154,7 @@ describe('Error middlewares', () => {
         expect.objectContaining({
           code: httpStatus.INTERNAL_SERVER_ERROR,
           message: httpStatus[httpStatus.INTERNAL_SERVER_ERROR],
-        })
+        }),
       );
       expect(res.locals.errorMessage).toBe(error.message);
       config.env = process.env.NODE_ENV;
@@ -170,7 +172,7 @@ describe('Error middlewares', () => {
         expect.objectContaining({
           code: error.statusCode,
           message: error.message,
-        })
+        }),
       );
       config.env = process.env.NODE_ENV;
     });

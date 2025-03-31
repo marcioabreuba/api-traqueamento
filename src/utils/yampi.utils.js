@@ -24,10 +24,7 @@ const validateWebhookSignature = (signature, payload) => {
     const expectedSignature = hmac.digest('hex');
 
     // Compara as assinaturas
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(signatureWithoutPrefix),
-      Buffer.from(expectedSignature)
-    );
+    const isValid = crypto.timingSafeEqual(Buffer.from(signatureWithoutPrefix), Buffer.from(expectedSignature));
 
     if (!isValid) {
       logger.warn('Assinatura do webhook inválida');
@@ -41,5 +38,5 @@ const validateWebhookSignature = (signature, payload) => {
 };
 
 module.exports = {
-  validateWebhookSignature
-}; 
+  validateWebhookSignature,
+};
