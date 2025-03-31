@@ -152,32 +152,54 @@ const initialize = async () => {
     reader = Reader.openBuffer(dbBuffer);
     logger.info('Base de dados GeoIP aberta com sucesso');
 
-    // Testar com um IP conhecido
+    // Testar com IPs conhecidos
+    let initializationSuccessful = false;
+    
+    // 1. Teste com IPv4 conhecido (Google DNS)
     try {
-      const testResult = reader.city('8.8.8.8');
-      if (testResult) {
-        logger.info('Base de dados GeoIP inicializada e testada com sucesso');
-        
-        // Teste de diagnóstico (opcional) - não deve afetar o sucesso da inicialização
-        try {
-          // Tentar testar com IPv6 específico (apenas para diagnóstico)
-          reader.city('2804:1054:3016:61b0:8070:e8a8:6f99:3663');
-          logger.info('Teste com IPv6 específico bem-sucedido');
-        } catch (ipv6Error) {
-          // Apenas logar o erro, mas não interferir na inicialização
-          logger.warn(`Erro no teste de diagnóstico com IPv6 específico: ${ipv6Error.message}`);
-          logger.warn('Este erro não afeta o funcionamento normal do serviço');
-        }
-        
-        return true;
+      const ipv4Result = reader.city('8.8.8.8');
+      if (ipv4Result && ipv4Result.country) {
+        logger.info('Teste com IPv4 (8.8.8.8) bem-sucedido');
+        const cityName = ipv4Result.city && ipv4Result.city.names ? ipv4Result.city.names.en || 'N/A' : 'N/A';
+        logger.debug(`Resultado: ${ipv4Result.country.names.en}, ${cityName}`);
+        initializationSuccessful = true;
       }
-    } catch (error) {
-      logger.error('Falha ao testar base de dados GeoIP:', error);
-      return false;
+    } catch (ipv4Error) {
+      logger.error(`Falha no teste com IPv4: ${ipv4Error.message}`);
+    }
+
+    // 2. Teste com IPv6 padrão (Google DNS IPv6)
+    try {
+      const ipv6Result = reader.city('2001:4860:4860::8888');
+      if (ipv6Result && ipv6Result.country) {
+        logger.info('Teste com IPv6 (2001:4860:4860::8888) bem-sucedido');
+        const cityName = ipv6Result.city && ipv6Result.city.names ? ipv6Result.city.names.en || 'N/A' : 'N/A';
+        logger.debug(`Resultado: ${ipv6Result.country.names.en}, ${cityName}`);
+        initializationSuccessful = true;
+      }
+    } catch (ipv6Error) {
+      logger.warn(`Falha no teste com IPv6 padrão: ${ipv6Error.message}`);
     }
     
-    logger.error('Falha ao testar base de dados GeoIP');
-    return false;
+    // 3. Teste com IPv6 específico (apenas para diagnóstico adicional)
+    try {
+      // Este é um teste específico adicional, não deve impedir a inicialização
+      reader.city('2804:1054:3016:61b0:8070:e8a8:6f99:3663');
+      logger.info('Teste com IPv6 específico bem-sucedido');
+    } catch (ipv6SpecificError) {
+      // Apenas logar o erro, mas não interferir na inicialização
+      logger.warn(`Erro no teste de diagnóstico com IPv6 específico: ${ipv6SpecificError.message}`);
+      logger.warn('Este erro não afeta o funcionamento normal do serviço');
+    }
+    
+    // Verificar se pelo menos um dos testes principais foi bem-sucedido
+    if (initializationSuccessful) {
+      logger.info('Base de dados GeoIP inicializada com sucesso');
+      return true;
+    } else {
+      logger.error('Todos os testes de inicialização do GeoIP falharam');
+      return false;
+    }
   } catch (error) {
     logger.error('Erro ao inicializar GeoIP:', error);
     return false;
@@ -222,58 +244,114 @@ const getLocation = async (ip) => {
       return cachedResult.data;
     }
 
+    // Determinar se é IPv4 ou IPv6
+    const isIpv6 = ip.includes(':');
+    logger.debug(`Tentando obter localização para ${isIpv6 ? 'IPv6' : 'IPv4'}: ${ip}`);
+
+    let result = null;
+    let locationData = null;
+    let errorMessage = null;
+
     try {
-      // Usar a API direta do Reader do GeoIP2-node
-      const result = reader.city(ip);
+      // Tentar com o IP original
+      result = reader.city(ip);
       
       // Log da resposta completa para diagnóstico
       logger.debug(`Resposta completa do MaxMind para IP ${ip}: ${JSON.stringify(result, null, 2)}`);
       
       // Extrair dados com validação
-      const locationData = {
-        country: result.country && result.country.names && (result.country.names.pt || result.country.names['pt-BR'] || result.country.names.en) || '',
-        city: result.city && result.city.names && (result.city.names.pt || result.city.names['pt-BR'] || result.city.names.en) || '',
-        subdivision: result.subdivisions && result.subdivisions[0] && 
-                   result.subdivisions[0].names && (result.subdivisions[0].names.pt || result.subdivisions[0].names['pt-BR'] || result.subdivisions[0].names.en) || '',
-        postal: result.postal && result.postal.code || '',
-        latitude: (result.location && result.location.latitude && 
-                  !isNaN(result.location.latitude)) ? result.location.latitude : null,
-        longitude: (result.location && result.location.longitude && 
-                   !isNaN(result.location.longitude)) ? result.location.longitude : null,
-        timezone: result.location && result.location.timeZone || '',
-        accuracyRadius: result.location && result.location.accuracyRadius || null
-      };
-
-      // Log dos dados extraídos
-      logger.debug(`Dados extraídos para IP ${ip}: ${JSON.stringify(locationData)}`);
+      locationData = extractLocationData(result);
+      logger.info(`Localização obtida com sucesso para ${isIpv6 ? 'IPv6' : 'IPv4'}: ${ip}`);
+    } catch (primaryError) {
+      errorMessage = primaryError.message;
+      logger.warn(`Erro ao consultar localização para ${isIpv6 ? 'IPv6' : 'IPv4'} ${ip}: ${errorMessage}`);
       
-      // Armazenar no cache
-      cache.set(ip, {
-        data: locationData,
-        timestamp: Date.now()
-      });
+      // Se o IP é IPv6 com formato ::ffff:IPv4, tentar com o IPv4 embutido
+      if (isIpv6 && ip.startsWith('::ffff:')) {
+        const ipv4 = ip.substring(7); // Remover o prefixo ::ffff:
+        if (isValidIp(ipv4)) {
+          logger.info(`Tentando fallback para IPv4 embutido: ${ipv4}`);
+          try {
+            result = reader.city(ipv4);
+            locationData = extractLocationData(result);
+            logger.info(`Localização obtida com fallback para IPv4: ${ipv4}`);
+          } catch (fallbackError) {
+            logger.warn(`Falha no fallback para IPv4 ${ipv4}: ${fallbackError.message}`);
+          }
+        }
+      }
+      // Se for IPv4, tentar com formato IPv6 compatível
+      else if (!isIpv6) {
+        const ipv6 = `::ffff:${ip}`;
+        if (isValidIp(ipv6)) {
+          logger.info(`Tentando fallback para IPv6 compatível: ${ipv6}`);
+          try {
+            result = reader.city(ipv6);
+            locationData = extractLocationData(result);
+            logger.info(`Localização obtida com fallback para IPv6: ${ipv6}`);
+          } catch (fallbackError) {
+            logger.warn(`Falha no fallback para IPv6 ${ipv6}: ${fallbackError.message}`);
+          }
+        }
+      }
+    }
 
-      return locationData;
-    } catch (error) {
-      // Tratamento específico de erros do GeoIP2-node
-      if (error.code === 'IP_ADDRESS_NOT_FOUND') {
-        logger.warn(`IP não encontrado na base GeoIP: ${ip}`);
-      } else if (error.code === 'IP_ADDRESS_RESERVED') {
-        logger.warn(`IP reservado, ignorando geolocalização: ${ip}`);
-      } else if (error.message && error.message.includes('Unknown type NaN at offset')) {
-        logger.warn(`Erro ao consultar IP ${ip} na base GeoIP: ${error.message}`);
-      } else {
-        logger.error(`Erro ao buscar localização para IP ${ip}:`, error);
+    // Se ainda não temos dados, retornar objeto vazio
+    if (!locationData) {
+      // Tratamento específico para diferentes tipos de erros
+      if (errorMessage) {
+        if (errorMessage.includes('IP_ADDRESS_NOT_FOUND')) {
+          logger.warn(`IP não encontrado na base GeoIP: ${ip}`);
+        } else if (errorMessage.includes('IP_ADDRESS_RESERVED')) {
+          logger.warn(`IP reservado, ignorando geolocalização: ${ip}`);
+        } else if (errorMessage.includes('Unknown type NaN at offset')) {
+          logger.warn(`Erro na base de dados ao consultar IP ${ip}: ${errorMessage}`);
+        } else {
+          logger.error(`Erro ao buscar localização para IP ${ip}: ${errorMessage}`);
+        }
       }
       
-      // Retornar objeto vazio em vez de null
       return getEmptyLocation();
     }
+
+    // Armazenar no cache
+    cache.set(ip, {
+      data: locationData,
+      timestamp: Date.now()
+    });
+
+    return locationData;
   } catch (error) {
     logger.error(`Erro ao buscar localização para IP ${ip}:`, error);
     // Retornar objeto vazio em vez de null para não interromper o fluxo
     return getEmptyLocation();
   }
+};
+
+/**
+ * Extrai dados de localização estruturados da resposta do MaxMind
+ * @param {Object} result - Resultado da consulta do MaxMind
+ * @returns {Object} Dados estruturados de localização
+ */
+const extractLocationData = (result) => {
+  if (!result) return getEmptyLocation();
+  
+  return {
+    country: result.country && result.country.names && 
+             (result.country.names.pt || result.country.names['pt-BR'] || result.country.names.en) || '',
+    city: result.city && result.city.names && 
+          (result.city.names.pt || result.city.names['pt-BR'] || result.city.names.en) || '',
+    subdivision: result.subdivisions && result.subdivisions[0] && 
+                result.subdivisions[0].names && 
+                (result.subdivisions[0].names.pt || result.subdivisions[0].names['pt-BR'] || result.subdivisions[0].names.en) || '',
+    postal: result.postal && result.postal.code || '',
+    latitude: (result.location && result.location.latitude && 
+               !isNaN(result.location.latitude)) ? result.location.latitude : null,
+    longitude: (result.location && result.location.longitude && 
+                !isNaN(result.location.longitude)) ? result.location.longitude : null,
+    timezone: result.location && result.location.timeZone || '',
+    accuracyRadius: result.location && result.location.accuracyRadius || null
+  };
 };
 
 /**
@@ -294,17 +372,51 @@ const extractClientIp = (req) => {
     'x-client-ip'
   ];
 
+  // Função para extrair e validar IPs de uma string
+  const extractValidIps = (ipString) => {
+    if (!ipString) return [];
+    const ips = ipString.split(',').map(ip => ip.trim());
+    
+    // Separar IPv6 e IPv4
+    const ipv6Addresses = [];
+    const ipv4Addresses = [];
+    
+    for (const ip of ips) {
+      // Remover prefixo IPv6 se presente para validação correta
+      const cleanIp = ip.replace(/^::ffff:/, '');
+      
+      // Validar IPv6
+      if (cleanIp.includes(':')) {
+        if (isValidIp(ip)) {
+          logger.debug(`IPv6 válido encontrado: ${ip}`);
+          ipv6Addresses.push(ip);
+        }
+      } 
+      // Validar IPv4
+      else if (cleanIp.includes('.')) {
+        if (isValidIp(cleanIp)) {
+          logger.debug(`IPv4 válido encontrado: ${cleanIp}`);
+          ipv4Addresses.push(cleanIp);
+        }
+      }
+    }
+    
+    // Retorna primeiro os endereços IPv6, depois IPv4
+    return [...ipv6Addresses, ...ipv4Addresses];
+  };
+
   // Tentar obter o IP dos headers
   for (const header of ipHeaders) {
     const value = headers[header];
     if (value) {
       logger.debug(`Header ${header} encontrado: ${value}`);
-      const ips = value.split(',').map(ip => ip.trim());
-      for (const ip of ips) {
-        if (isValidIp(ip)) {
-          logger.info(`IP válido extraído do header ${header}: ${ip}`);
-          return ip;
-        }
+      const validIps = extractValidIps(value);
+      
+      if (validIps.length > 0) {
+        const selectedIp = validIps[0]; // Usar o primeiro IP (prioriza IPv6)
+        const isIpv6 = selectedIp.includes(':');
+        logger.info(`IP válido extraído do header ${header}: ${selectedIp} (${isIpv6 ? 'IPv6' : 'IPv4'})`);
+        return selectedIp;
       }
     }
   }
@@ -313,7 +425,8 @@ const extractClientIp = (req) => {
   if (req.socket && req.socket.remoteAddress) {
     const socketIp = req.socket.remoteAddress;
     if (isValidIp(socketIp)) {
-      logger.info(`IP válido extraído do socket: ${socketIp}`);
+      const isIpv6 = socketIp.includes(':');
+      logger.info(`IP válido extraído do socket: ${socketIp} (${isIpv6 ? 'IPv6' : 'IPv4'})`);
       return socketIp;
     }
   }
@@ -322,7 +435,8 @@ const extractClientIp = (req) => {
   if (req.body && req.body.user_data && req.body.user_data.ip) {
     const bodyIp = req.body.user_data.ip;
     if (isValidIp(bodyIp)) {
-      logger.info(`IP válido extraído do body: ${bodyIp}`);
+      const isIpv6 = bodyIp.includes(':');
+      logger.info(`IP válido extraído do body: ${bodyIp} (${isIpv6 ? 'IPv6' : 'IPv4'})`);
       return bodyIp;
     }
   }
@@ -331,7 +445,8 @@ const extractClientIp = (req) => {
   if (req.query && req.query.ip) {
     const queryIp = req.query.ip;
     if (isValidIp(queryIp)) {
-      logger.info(`IP válido extraído do query string: ${queryIp}`);
+      const isIpv6 = queryIp.includes(':');
+      logger.info(`IP válido extraído do query string: ${queryIp} (${isIpv6 ? 'IPv6' : 'IPv4'})`);
       return queryIp;
     }
   }
@@ -342,7 +457,8 @@ const extractClientIp = (req) => {
       const url = new URL(req.headers.origin);
       const hostname = url.hostname;
       if (isValidIp(hostname)) {
-        logger.info(`IP válido extraído do header origin: ${hostname}`);
+        const isIpv6 = hostname.includes(':');
+        logger.info(`IP válido extraído do header origin: ${hostname} (${isIpv6 ? 'IPv6' : 'IPv4'})`);
         return hostname;
       }
     } catch (error) {
