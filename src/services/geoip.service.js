@@ -13,13 +13,38 @@ let reader = null;
  */
 const isValidIp = (ip) => {
   if (!ip || typeof ip !== 'string') return false;
+  
   // Remover prefixo IPv6 se presente
   const cleanIp = ip.replace(/^::ffff:/, '');
-  // Regex para validar IPv4
-  const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
-  // Regex para validar IPv6
-  const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
-  return ipv4Regex.test(cleanIp) || ipv6Regex.test(cleanIp);
+  
+  // Regex mais robusta para IPv4
+  const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+  
+  // Validação adicional para IPv4
+  if (ipv4Regex.test(cleanIp)) {
+    // Verificar se há zeros à esquerda em algum octeto
+    const octets = cleanIp.split('.');
+    const hasLeadingZeros = octets.some(octet => {
+      return octet.length > 1 && octet[0] === '0';
+    });
+    
+    return !hasLeadingZeros;
+  }
+  
+  // Regex para diferentes formatos de IPv6
+  const ipv6Patterns = [
+    // IPv6 completo
+    /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/,
+    // IPv6 com zeros comprimidos
+    /^((?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?)::((?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?)$/,
+    // IPv6 com seção de IPv4 no final
+    /^((?:[0-9A-Fa-f]{1,4}:){6,6})(25[0-5]|2[0-4]\d|[0-1]?\d?\d)(\.(25[0-5]|2[0-4]\d|[0-1]?\d?\d)){3}$/,
+    // IPv6 comprimido com seção de IPv4 no final
+    /^((?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?)::((?:[0-9A-Fa-f]{1,4}:)*)(25[0-5]|2[0-4]\d|[0-1]?\d?\d)(\.(25[0-5]|2[0-4]\d|[0-1]?\d?\d)){3}$/
+  ];
+
+  // Testar todos os padrões de IPv6
+  return ipv6Patterns.some(pattern => pattern.test(cleanIp));
 };
 
 /**
@@ -49,7 +74,7 @@ const initialize = async () => {
       path.join(process.cwd(), 'data', 'GeoLite2-City.mmdb'),
       path.join(__dirname, '../../data/GeoLite2-City.mmdb'),
       'data/GeoLite2-City.mmdb',
-      './data/GeoLite2-City.mmdb',
+      './data/GeoLite2-City.mmdb'
     ];
 
     let dbPath = null;
@@ -147,7 +172,7 @@ const getLocation = async (ip) => {
       postal: (result.postal && result.postal.code) || null,
       subdivision:
         (result.subdivisions && result.subdivisions[0] && result.subdivisions[0].names && result.subdivisions[0].names.en) ||
-        null,
+        null
     };
 
     logger.info(`Dados de localização obtidos para IP ${cleanIp}:`, locationData);
@@ -203,7 +228,12 @@ const lookupIp = async (ip) => {
  */
 const extractClientIp = (req) => {
   logger.debug('Iniciando extração do IP do cliente');
-  // Lista de headers para tentar obter o IP
+
+  // Garantir que req.headers existe
+  const headers = req.headers || {};
+  logger.debug('Headers disponíveis:', JSON.stringify(headers, null, 2));
+
+  // Lista expandida de headers para tentar obter o IP
   const ipHeaders = [
     'x-forwarded-for',
     'x-real-ip',
@@ -212,20 +242,30 @@ const extractClientIp = (req) => {
     'x-forwarded',
     'forwarded-for',
     'forwarded',
+    'x-cluster-client-ip',
+    'true-client-ip',
+    'x-appengine-user-ip',
+    'x-arr-clientip',
+    'x-azure-clientip',
+    'x-aws-ec2-metadata-ip'
   ];
 
   // Tentar obter o IP dos headers
   for (const header of ipHeaders) {
-    const value = req.headers[header];
+    const value = headers[header];
     if (value) {
       logger.debug(`Header ${header} encontrado: ${value}`);
-      const ip = value.split(',')[0].trim();
-      if (isValidIp(ip)) {
-        logger.info(`IP válido extraído do header ${header}: ${ip}`);
-        return ip;
+      // Tratar caso de múltiplos IPs (comum em x-forwarded-for)
+      const ips = value.split(',').map(ip => ip.trim());
+      for (const ip of ips) {
+        if (isValidIp(ip)) {
+          logger.info(`IP válido extraído do header ${header}: ${ip}`);
+          return ip;
+        }
       }
     }
   }
+
   // Tentar obter o IP do socket
   if (req.socket && req.socket.remoteAddress) {
     const socketIp = req.socket.remoteAddress;
@@ -234,6 +274,7 @@ const extractClientIp = (req) => {
       return socketIp;
     }
   }
+
   // Tentar obter o IP do body da requisição
   if (req.body && req.body.user_data && req.body.user_data.ip) {
     const bodyIp = req.body.user_data.ip;
@@ -242,6 +283,16 @@ const extractClientIp = (req) => {
       return bodyIp;
     }
   }
+
+  // Tentar obter o IP do query string
+  if (req.query && req.query.ip) {
+    const queryIp = req.query.ip;
+    if (isValidIp(queryIp)) {
+      logger.info(`IP válido extraído do query string: ${queryIp}`);
+      return queryIp;
+    }
+  }
+
   logger.warn('Não foi possível extrair um IP válido do cliente');
   return null;
 };
@@ -251,4 +302,5 @@ module.exports = {
   getLocation,
   lookupIp,
   extractClientIp,
+  isValidIp
 };
