@@ -411,20 +411,45 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
 
         // Atualizar o evento no banco de dados
         console.log('fbEventId', fbEventId);
-        const updatedEvent = await prisma.event.update({
-          where: { id: savedEvent.id },
-          data: {
-            status: 'sent',
-            responseData: responseDataToSave,
-            fbEventId
-          }
-        });
+        try {
+          const updatedEvent = await prisma.event.update({
+            where: { id: savedEvent.id },
+            data: {
+              status: 'sent',
+              responseData: responseDataToSave,
+              fbEventId
+            }
+          });
 
-        // Retornar o evento atualizado
-        return updatedEvent;
+          // Retornar o evento atualizado
+          return updatedEvent;
+        } catch (dbError) {
+          logger.error(`Erro ao atualizar evento no banco: ${dbError.message}`);
+          logger.error(`Stack trace: ${dbError.stack}`);
+          
+          // Lançar um ApiError com status code explícito
+          throw new ApiError(
+            httpStatus.INTERNAL_SERVER_ERROR,
+            `Falha ao atualizar evento: ${dbError.message}`,
+            'DatabaseUpdateError',
+            true,
+            dbError.stack
+          );
+        }
       } catch (updateError) {
         logger.error(`Erro ao atualizar evento no banco: ${updateError.message}`);
         logger.error(`Stack trace: ${updateError.stack}`);
+
+        // Verificar se updateError já tem um status code válido
+        let statusCode = httpStatus.INTERNAL_SERVER_ERROR; // 500 como padrão
+        
+        if (updateError instanceof ApiError && 
+            updateError.statusCode && 
+            Number.isInteger(updateError.statusCode) && 
+            updateError.statusCode >= 100 && 
+            updateError.statusCode <= 599) {
+          statusCode = updateError.statusCode;
+        }
 
         // Mesmo com falha na atualização, consideramos que o evento foi enviado com sucesso
         // então retornamos o evento original para não propagar erro ao cliente
