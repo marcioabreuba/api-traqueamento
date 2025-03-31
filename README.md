@@ -89,3 +89,76 @@ src/
 ## Licença
 
 Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+
+## Funcionalidades do GeoIP
+
+### Correção Automática da Base GeoIP
+
+O serviço agora inclui um mecanismo automático de correção e atualização da base de dados GeoIP. Quando o servidor é iniciado com `yarn start` ou `npm start`, o script de correção da base GeoIP é executado automaticamente antes da inicialização do serviço.
+
+### Como Funciona
+
+1. **Durante a inicialização do serviço:**
+   - O script `fix-geoip.js` é executado automaticamente
+   - Verifica se a base de dados GeoIP existe e está íntegra
+   - Baixa uma nova base se necessário
+   - Valida a nova base antes de substituir a atual
+   - Inicia o serviço com a base atualizada
+
+2. **No ambiente Render:**
+   - O processo é totalmente automatizado
+   - Detecção automática do ambiente Render e execução em modo não-interativo
+   - Sem necessidade de intervenção manual
+
+### Comandos Disponíveis
+
+- **Iniciar serviço com correção automática da base GeoIP:**
+  ```bash
+  npm start
+  # ou
+  yarn start
+  ```
+
+- **Executar apenas a correção da base GeoIP:**
+  ```bash
+  npm run fix-geoip
+  # ou
+  yarn fix-geoip
+  ```
+
+- **Executar a correção em modo não-interativo:**
+  ```bash
+  npm run fix-geoip -- --auto
+  # ou
+  yarn fix-geoip --auto
+  ```
+
+- **Testar a base GeoIP atual:**
+  ```bash
+  npm run test-geoip
+  # ou
+  yarn test-geoip
+  ```
+
+### Sistema de Fallback para IPs Brasileiros
+
+O serviço implementa um sistema robusto de fallback triplo para garantir que mesmo quando ocorrerem erros na consulta da base GeoIP, especialmente para IPs brasileiros, o sistema ainda fornecerá dados geográficos básicos:
+
+1. **Nível 1:** Tentativa com biblioteca principal (@maxmind/geoip2-node)
+2. **Nível 2:** Em caso de falha, tentativa com biblioteca alternativa (maxmind)
+3. **Nível 3:** Se ambas falharem, uso de dados estáticos para IPs brasileiros conhecidos
+
+### Depuração de Problemas com GeoIP
+
+Para habilitar logs mais detalhados relacionados ao GeoIP, defina a variável de ambiente:
+
+```bash
+# No Linux/Mac
+export DEBUG_GEOIP=true
+
+# No Windows
+set DEBUG_GEOIP=true
+
+# No Render (variável de ambiente)
+DEBUG_GEOIP=true
+```

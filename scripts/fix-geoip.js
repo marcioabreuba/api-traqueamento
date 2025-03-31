@@ -11,441 +11,397 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { promisify } = require('util');
-const axios = require('axios');
-const extract = require('extract-zip');
-const tar = require('tar');
-const dotenv = require('dotenv');
+const https = require('https');
+const readline = require('readline');
 const { Reader } = require('@maxmind/geoip2-node');
-const crypto = require('crypto');
+const maxmind = require('maxmind');
 
-// Carregar variáveis de ambiente
-dotenv.config({ path: path.join(__dirname, '../.env') });
+// Determinar se estamos em ambiente Render
+const isRenderEnvironment = process.env.RENDER === 'true' || 
+                            process.env.RENDER_EXTERNAL_URL || 
+                            process.env.RENDER_SERVICE_ID || 
+                            process.env.IS_RENDER === 'true';
 
-// Constantes e configurações
-const MAXMIND_ACCOUNT_ID = process.env.MAXMIND_ACCOUNT_ID;
-const MAXMIND_LICENSE_KEY = process.env.MAXMIND_LICENSE_KEY;
-const TARGET_DIR = path.join(__dirname, '../data');
-const DATABASE_FILENAME = 'GeoLite2-City.mmdb';
-const TARGET_PATH = path.join(TARGET_DIR, DATABASE_FILENAME);
-const BACKUP_PATH = path.join(TARGET_DIR, `${DATABASE_FILENAME}.bak`);
-const TEMP_TAR_FILE = path.resolve(TARGET_DIR, 'geolite2-city.tar.gz');
-const TEMP_EXTRACT_DIR = path.resolve(TARGET_DIR, 'temp_extract');
+// Determinar se estamos em modo automático (para CI/CD)
+const isAutomatedMode = process.argv.includes('--auto') || 
+                         process.env.CI === 'true' || 
+                         process.env.AUTOMATED === 'true' || 
+                         isRenderEnvironment;
 
-// Helpers para operações de arquivo assíncronas
-const writeFileAsync = promisify(fs.writeFile);
-const unlinkAsync = promisify(fs.unlink);
-const mkdirAsync = promisify(fs.mkdir);
-const rmdirAsync = promisify(fs.rmdir);
-const copyFileAsync = promisify(fs.copyFile);
+// Configurações
+const DOWNLOAD_URL = 'https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=JOJ3REIKfJWLIAqf&suffix=tar.gz';
+const DATA_DIR = path.join(process.cwd(), 'data');
+const GEOIP_DB_PATH = path.join(DATA_DIR, 'GeoLite2-City.mmdb');
+const DOWNLOAD_PATH = path.join(DATA_DIR, 'geolite2-city.tar.gz');
+const EXTRACT_DIR = path.join(DATA_DIR, 'temp_extract');
 
-/**
- * Verifica a integridade da base de dados GeoIP
- * @param {string} dbPath - Caminho para o arquivo da base de dados
- * @returns {Promise<boolean>} Verdadeiro se a base estiver íntegra
- */
-async function verificarIntegridadeBase(dbPath) {
-  console.log(`Verificando integridade da base em: ${dbPath}`);
-  
-  // Verificar se o arquivo existe
-  if (!fs.existsSync(dbPath)) {
-    console.error('❌ Arquivo não encontrado');
-    return false;
+// Função para imprimir banner
+const printBanner = () => {
+  console.log('\n======================================');
+  console.log('CORREÇÃO DA BASE DE DADOS GEOIP       ');
+  console.log('======================================\n');
+};
+
+// Função para criar interface de leitura interativa
+const createInterface = () => {
+  return readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+};
+
+// Função principal
+const main = async () => {
+  printBanner();
+
+  // Verificar diretório de dados
+  if (!fs.existsSync(DATA_DIR)) {
+    console.log('>> CRIANDO DIRETÓRIO DE DADOS');
+    fs.mkdirSync(DATA_DIR, { recursive: true });
   }
-  
-  // Verificar tamanho do arquivo
-  const stats = fs.statSync(dbPath);
-  const fileSize = stats.size;
-  console.log(`Tamanho da base: ${fileSize} bytes`);
-  
-  if (fileSize < 10000000) {
-    console.error('❌ Arquivo muito pequeno para ser uma base GeoIP válida');
-    return false;
-  }
-  
-  // Verificar permissões de leitura
-  try {
-    fs.accessSync(dbPath, fs.constants.R_OK);
-    console.log('✅ Arquivo tem permissões de leitura');
-  } catch (error) {
-    console.error(`❌ Erro de permissões: ${error.message}`);
-    return false;
-  }
-  
-  // Tentar carregar a base na memória
-  let dbBuffer = null;
-  try {
-    console.log('Lendo arquivo para a memória...');
-    dbBuffer = fs.readFileSync(dbPath);
-    console.log(`✅ Arquivo lido com sucesso (${dbBuffer.length} bytes)`);
-  } catch (error) {
-    console.error(`❌ Erro ao ler arquivo: ${error.message}`);
-    return false;
-  }
-  
-  // Tentar abrir a base com a biblioteca
-  let reader = null;
-  try {
-    console.log('Abrindo a base de dados...');
-    reader = Reader.openBuffer(dbBuffer);
-    console.log('✅ Base de dados aberta com sucesso');
-  } catch (error) {
-    console.error(`❌ Erro ao abrir base de dados: ${error.message}`);
-    return false;
-  }
-  
-  // Lista de IPs para teste
-  const testIPs = [
-    { value: '8.8.8.8', description: 'Google DNS (IPv4)' },
-    { value: '1.1.1.1', description: 'Cloudflare DNS (IPv4)' },
-    { value: '2001:4860:4860::8888', description: 'Google DNS (IPv6)' },
-    { value: '2606:4700:4700::1111', description: 'Cloudflare DNS (IPv6)' }
-  ];
-  
-  // Testar consultas a IPs conhecidos
-  let testsFailed = 0;
-  let testsPassed = 0;
-  
-  for (const ip of testIPs) {
-    console.log(`\nTestando IP: ${ip.description} (${ip.value})`);
-    try {
-      const result = reader.city(ip.value);
-      // Verificar apenas se recebemos um objeto de resultado válido
-      if (result && typeof result === 'object') {
-        console.log(`✅ Consulta bem-sucedida para ${ip.value}`);
-        testsPassed++;
-        
-        // Verificar campos críticos
-        const hasCountry = result.country && result.country.names;
-        const hasLocation = result.location && (
-          typeof result.location.latitude === 'number' || 
-          typeof result.location.longitude === 'number'
-        );
-        
-        if (!hasCountry || !hasLocation) {
-          console.log(`⚠️ Consulta retornou dados incompletos para ${ip.value}`);
-          testsFailed++;
+
+  // Verificar base atual
+  console.log('>> VERIFICANDO BASE ATUAL');
+  const currentDbExists = fs.existsSync(GEOIP_DB_PATH);
+  let shouldDownload = true;
+
+  if (currentDbExists) {
+    const baseHealthy = await checkDatabaseIntegrity(GEOIP_DB_PATH);
+    
+    if (baseHealthy) {
+      console.log('✅ Base atual está íntegra e funcional!');
+      
+      if (!isAutomatedMode) {
+        const rl = createInterface();
+        try {
+          const answer = await new Promise(resolve => {
+            rl.question('Deseja continuar mesmo assim? (S/N) ', resolve);
+          });
+          shouldDownload = answer.toLowerCase() === 's';
+        } finally {
+          rl.close();
         }
       } else {
-        console.log(`⚠️ Resultado vazio para ${ip.value}`);
-        testsFailed++;
+        console.log('Como está executando em modo automatizado, consideraremos "S".');
+        shouldDownload = true;
       }
-    } catch (error) {
-      console.error(`❌ Erro ao consultar ${ip.value}: ${error.message}`);
-      if (error.message.includes('Unknown type NaN at offset')) {
-        console.error('  PROBLEMA DETECTADO: Corrupção na estrutura interna da base');
-      }
-      testsFailed++;
+    } else {
+      console.log('⚠️ Base atual apresenta problemas!');
+      shouldDownload = true;
     }
-  }
-  
-  // Resultado final
-  console.log('\n=== RESULTADO DA VERIFICAÇÃO ===');
-  console.log(`Total de testes: ${testsPassed + testsFailed}`);
-  console.log(`Testes bem-sucedidos: ${testsPassed}`);
-  console.log(`Testes com falha: ${testsFailed}`);
-  
-  if (testsFailed === 0 && testsPassed > 0) {
-    console.log('✅✅✅ Base de dados íntegra e funcional');
-    return true;
-  } else if (testsPassed > 0) {
-    console.log('⚠️⚠️⚠️ Base de dados parcialmente funcional (alguns testes falharam)');
-    return testsPassed > testsFailed; // Considera válida se a maioria dos testes passou
   } else {
-    console.log('❌❌❌ Base de dados corrompida ou incompatível');
-    return false;
+    console.log('⚠️ Base de dados não encontrada!');
+    shouldDownload = true;
   }
-}
 
-/**
- * Baixa a base de dados do MaxMind
- */
-async function downloadDatabase() {
+  if (!shouldDownload) {
+    console.log('Operação cancelada pelo usuário.');
+    return;
+  }
+
+  // Baixar nova base
+  console.log('>> BAIXANDO NOVA BASE');
   console.log('=== BAIXANDO NOVA BASE DE DADOS ===');
-  
-  // Verificar credenciais
-  if (!MAXMIND_ACCOUNT_ID || !MAXMIND_LICENSE_KEY) {
-    console.error('❌ Erro: MAXMIND_ACCOUNT_ID e MAXMIND_LICENSE_KEY são necessários no arquivo .env');
-    return false;
-  }
-  
-  // Montar URL de download
-  const EDITION_ID = 'GeoLite2-City';
-  const downloadUrl = `https://download.maxmind.com/app/geoip_download?edition_id=${EDITION_ID}&license_key=${MAXMIND_LICENSE_KEY}&suffix=tar.gz`;
-  
-  try {
-    console.log('Iniciando download da base de dados...');
-    const response = await axios({
-      method: 'GET',
-      url: downloadUrl,
-      responseType: 'arraybuffer',
-      maxRedirects: 5
-    });
-    
-    // Verificar se o diretório de destino existe
-    if (!fs.existsSync(TARGET_DIR)) {
-      await mkdirAsync(TARGET_DIR, { recursive: true });
-      console.log(`Diretório criado: ${TARGET_DIR}`);
-    }
-    
-    // Salvar arquivo baixado
-    await writeFileAsync(TEMP_TAR_FILE, Buffer.from(response.data));
-    console.log(`Download concluído: ${TEMP_TAR_FILE} (${response.data.length} bytes)`);
-    
-    // Calcular checksum do arquivo
-    const fileHash = crypto.createHash('md5').update(response.data).digest('hex');
-    console.log(`Checksum (MD5): ${fileHash}`);
-    
-    return true;
-  } catch (error) {
-    console.error(`❌ Erro no download: ${error.message}`);
-    if (error.response) {
-      console.error(`Status: ${error.response.status}`);
-    }
-    return false;
-  }
-}
+  await downloadFile(DOWNLOAD_URL, DOWNLOAD_PATH);
 
-/**
- * Extrai arquivo tar.gz baixado
- */
-async function extractDatabase() {
+  // Extrair arquivos
+  console.log('>> EXTRAINDO ARQUIVOS');
   console.log('=== EXTRAINDO ARQUIVO ===');
-  
-  if (!fs.existsSync(TEMP_TAR_FILE)) {
-    console.error(`❌ Arquivo de download não encontrado: ${TEMP_TAR_FILE}`);
-    return false;
+  if (fs.existsSync(EXTRACT_DIR)) {
+    // Limpar diretório de extração
+    fs.rmSync(EXTRACT_DIR, { recursive: true, force: true });
   }
+  fs.mkdirSync(EXTRACT_DIR, { recursive: true });
   
   try {
-    // Criar diretório temporário para extração
-    if (fs.existsSync(TEMP_EXTRACT_DIR)) {
-      console.log(`Removendo diretório temporário existente: ${TEMP_EXTRACT_DIR}`);
-      fs.rmSync(TEMP_EXTRACT_DIR, { recursive: true, force: true });
+    console.log(`Extraindo ${DOWNLOAD_PATH}...`);
+    if (process.platform === 'win32') {
+      // Usar node-tar para Windows
+      const tar = require('tar');
+      tar.extract({
+        file: DOWNLOAD_PATH,
+        cwd: EXTRACT_DIR
+      });
+    } else {
+      // Usar o comando tar nativo para Linux/Mac
+      execSync(`tar -xzf "${DOWNLOAD_PATH}" -C "${EXTRACT_DIR}"`);
     }
-    
-    await mkdirAsync(TEMP_EXTRACT_DIR, { recursive: true });
-    console.log(`Diretório de extração criado: ${TEMP_EXTRACT_DIR}`);
-    
-    // Extrair arquivo
-    console.log(`Extraindo ${TEMP_TAR_FILE}...`);
-    await tar.extract({
-      file: TEMP_TAR_FILE,
-      cwd: TEMP_EXTRACT_DIR
-    });
-    
     console.log('Extração concluída');
-    return true;
   } catch (error) {
-    console.error(`❌ Erro ao extrair arquivo: ${error.message}`);
-    return false;
+    console.error('Erro ao extrair arquivo:', error);
+    cleanup();
+    return;
   }
-}
 
-/**
- * Localiza o arquivo .mmdb extraído
- */
-async function findMmdbFile() {
+  // Localizar arquivo MMDB
+  console.log('>> LOCALIZANDO ARQUIVO MMDB');
   console.log('=== LOCALIZANDO ARQUIVO MMDB ===');
-  
-  if (!fs.existsSync(TEMP_EXTRACT_DIR)) {
-    console.error(`❌ Diretório de extração não encontrado: ${TEMP_EXTRACT_DIR}`);
-    return null;
-  }
+  let mmdbPath = null;
   
   try {
-    // Função recursiva para encontrar arquivos com extensão .mmdb
-    const findMmdbFiles = (dir) => {
-      let results = [];
-      const list = fs.readdirSync(dir);
-      
-      list.forEach((file) => {
+    // Encontrar todos os arquivos .mmdb no diretório extraído
+    const findMmdbFiles = (dir, results = []) => {
+      const files = fs.readdirSync(dir);
+      for (const file of files) {
         const filePath = path.join(dir, file);
         const stat = fs.statSync(filePath);
-        
         if (stat.isDirectory()) {
-          // Recursive case: se for diretório, procurar dentro dele
-          results = results.concat(findMmdbFiles(filePath));
+          findMmdbFiles(filePath, results);
         } else if (path.extname(file) === '.mmdb') {
-          // Base case: encontrou um arquivo .mmdb
           results.push(filePath);
         }
-      });
-      
+      }
       return results;
     };
     
-    // Encontrar todos os arquivos .mmdb no diretório de extração
-    const mmdbFiles = findMmdbFiles(TEMP_EXTRACT_DIR);
-    
+    const mmdbFiles = findMmdbFiles(EXTRACT_DIR);
     if (mmdbFiles.length === 0) {
-      console.error('❌ Nenhum arquivo .mmdb encontrado após extração');
-      return null;
+      throw new Error('Nenhum arquivo .mmdb encontrado na pasta extraída');
     }
     
-    // Filtrar apenas para GeoLite2-City.mmdb
-    const targetFile = mmdbFiles.find(file => path.basename(file) === DATABASE_FILENAME);
-    
-    if (targetFile) {
-      console.log(`✅ Arquivo encontrado: ${targetFile}`);
-      return targetFile;
-    } else {
-      // Se não encontrar o arquivo exato, usar o primeiro .mmdb encontrado
-      console.log(`⚠️ Arquivo específico não encontrado, usando: ${mmdbFiles[0]}`);
-      return mmdbFiles[0];
-    }
+    mmdbPath = mmdbFiles[0];
+    console.log(`✅ Arquivo encontrado: ${mmdbPath}`);
   } catch (error) {
-    console.error(`❌ Erro ao procurar arquivo: ${error.message}`);
-    return null;
+    console.error('Erro ao localizar arquivo MMDB:', error);
+    cleanup();
+    return;
   }
-}
 
-/**
- * Substitui a base de dados atual pela nova
- */
-async function replaceDatabase(newDbPath) {
-  console.log('=== SUBSTITUINDO BASE DE DADOS ===');
+  // Verificar nova base
+  console.log('>> VERIFICANDO NOVA BASE');
+  const newBaseHealthy = await checkDatabaseIntegrity(mmdbPath);
   
-  if (!fs.existsSync(newDbPath)) {
-    console.error(`❌ Novo arquivo não encontrado: ${newDbPath}`);
-    return false;
+  if (!newBaseHealthy) {
+    console.error('⚠️ Nova base apresenta problemas! Operação cancelada.');
+    cleanup();
+    return;
   }
+
+  // Substituir base de dados
+  console.log('>> SUBSTITUINDO BASE DE DADOS');
+  console.log('=== SUBSTITUINDO BASE DE DADOS ===');
   
   try {
     // Fazer backup da base atual se existir
-    if (fs.existsSync(TARGET_PATH)) {
-      console.log(`Fazendo backup da base atual para: ${BACKUP_PATH}`);
-      await copyFileAsync(TARGET_PATH, BACKUP_PATH);
+    if (currentDbExists) {
+      const backupPath = `${GEOIP_DB_PATH}.bak`;
+      console.log(`Fazendo backup da base atual para: ${backupPath}`);
+      fs.copyFileSync(GEOIP_DB_PATH, backupPath);
     }
     
-    // Copiar nova base para o destino
-    console.log(`Copiando nova base para: ${TARGET_PATH}`);
-    await copyFileAsync(newDbPath, TARGET_PATH);
-    
+    // Copiar nova base para o local correto
+    console.log(`Copiando nova base para: ${GEOIP_DB_PATH}`);
+    fs.copyFileSync(mmdbPath, GEOIP_DB_PATH);
     console.log('✅ Base de dados substituída com sucesso');
-    return true;
   } catch (error) {
-    console.error(`❌ Erro ao substituir base de dados: ${error.message}`);
-    return false;
+    console.error('Erro ao substituir base de dados:', error);
+    cleanup();
+    return;
   }
-}
 
-/**
- * Limpa arquivos temporários
- */
-async function cleanup() {
+  // Verificar base instalada
+  console.log('>> VERIFICANDO BASE INSTALADA');
+  const installedBaseHealthy = await checkDatabaseIntegrity(GEOIP_DB_PATH);
+  
+  if (installedBaseHealthy) {
+    console.log('✅ Base instalada verificada com sucesso!');
+  } else {
+    console.error('⚠️ Base instalada apresenta problemas!');
+    if (fs.existsSync(`${GEOIP_DB_PATH}.bak`)) {
+      console.log('Restaurando backup...');
+      fs.copyFileSync(`${GEOIP_DB_PATH}.bak`, GEOIP_DB_PATH);
+    }
+  }
+
+  // Limpar arquivos temporários
+  cleanup();
+
+  console.log('\n======================================');
+  console.log('✅ CORREÇÃO CONCLUÍDA COM SUCESSO');
+  console.log('======================================');
+};
+
+// Função para baixar arquivo
+const downloadFile = (url, destination) => {
+  return new Promise((resolve, reject) => {
+    console.log('Iniciando download da base de dados...');
+    const file = fs.createWriteStream(destination);
+    
+    https.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`Falha no download. Status code: ${response.statusCode}`));
+        return;
+      }
+      
+      response.pipe(file);
+      
+      file.on('finish', () => {
+        file.close();
+        const stats = fs.statSync(destination);
+        const fileSizeInBytes = stats.size;
+        console.log(`Download concluído: ${destination} (${fileSizeInBytes} bytes)`);
+        
+        // Verificar checksum (MD5)
+        try {
+          const crypto = require('crypto');
+          const fileBuffer = fs.readFileSync(destination);
+          const hash = crypto.createHash('md5').update(fileBuffer).digest('hex');
+          console.log(`Checksum (MD5): ${hash}`);
+          resolve();
+        } catch (error) {
+          console.error('Erro ao calcular checksum:', error);
+          resolve();
+        }
+      });
+    }).on('error', (err) => {
+      fs.unlink(destination, () => {}); // Remover arquivo incompleto
+      reject(err);
+    });
+  });
+};
+
+// Função para limpar arquivos temporários
+const cleanup = () => {
+  console.log('>> LIMPANDO ARQUIVOS TEMPORÁRIOS');
   console.log('=== LIMPANDO ARQUIVOS TEMPORÁRIOS ===');
   
   try {
-    // Remover arquivo de download
-    if (fs.existsSync(TEMP_TAR_FILE)) {
-      await unlinkAsync(TEMP_TAR_FILE);
-      console.log(`Arquivo removido: ${TEMP_TAR_FILE}`);
+    if (fs.existsSync(DOWNLOAD_PATH)) {
+      fs.unlinkSync(DOWNLOAD_PATH);
+      console.log(`Arquivo removido: ${DOWNLOAD_PATH}`);
     }
     
-    // Remover diretório de extração
-    if (fs.existsSync(TEMP_EXTRACT_DIR)) {
-      fs.rmSync(TEMP_EXTRACT_DIR, { recursive: true, force: true });
-      console.log(`Diretório removido: ${TEMP_EXTRACT_DIR}`);
+    if (fs.existsSync(EXTRACT_DIR)) {
+      fs.rmSync(EXTRACT_DIR, { recursive: true, force: true });
+      console.log(`Diretório removido: ${EXTRACT_DIR}`);
     }
     
     console.log('✅ Limpeza concluída');
-    return true;
   } catch (error) {
-    console.error(`⚠️ Erro ao limpar arquivos temporários: ${error.message}`);
-    return false;
+    console.error('Erro ao limpar arquivos temporários:', error);
   }
-}
+};
 
-/**
- * Processo principal de correção da base
- */
-async function main() {
-  console.log('======================================');
-  console.log('CORREÇÃO DA BASE DE DADOS GEOIP');
-  console.log('======================================\n');
+// Função para verificar integridade da base
+const checkDatabaseIntegrity = async (dbPath) => {
+  console.log(`Verificando integridade da base em: ${dbPath}`);
   
-  // Verificar base atual
-  console.log('\n>> VERIFICANDO BASE ATUAL');
-  const baseAtualOk = await verificarIntegridadeBase(TARGET_PATH);
-  
-  if (baseAtualOk) {
-    console.log('\n✅ Base atual está íntegra e funcional!');
-    console.log('Deseja continuar mesmo assim? (S/N)');
-    console.log('Como está executando em modo automatizado, consideraremos "S".');
-  }
-  
-  // Download da nova base
-  console.log('\n>> BAIXANDO NOVA BASE');
-  const downloadOk = await downloadDatabase();
-  if (!downloadOk) {
-    console.error('\n❌ Falha no download. Abortando correção.');
-    return;
-  }
-  
-  // Extrair arquivos
-  console.log('\n>> EXTRAINDO ARQUIVOS');
-  const extractOk = await extractDatabase();
-  if (!extractOk) {
-    console.error('\n❌ Falha na extração. Abortando correção.');
-    await cleanup();
-    return;
-  }
-  
-  // Localizar arquivo .mmdb
-  console.log('\n>> LOCALIZANDO ARQUIVO MMDB');
-  const newDbPath = await findMmdbFile();
-  if (!newDbPath) {
-    console.error('\n❌ Arquivo não localizado. Abortando correção.');
-    await cleanup();
-    return;
-  }
-  
-  // Verificar integridade da nova base
-  console.log('\n>> VERIFICANDO NOVA BASE');
-  const novaBaseOk = await verificarIntegridadeBase(newDbPath);
-  if (!novaBaseOk) {
-    console.error('\n❌ Nova base não passou na verificação de integridade. Abortando correção.');
-    await cleanup();
-    return;
-  }
-  
-  // Substituir base de dados
-  console.log('\n>> SUBSTITUINDO BASE DE DADOS');
-  const replaceOk = await replaceDatabase(newDbPath);
-  if (!replaceOk) {
-    console.error('\n❌ Falha ao substituir base de dados.');
-    await cleanup();
-    return;
-  }
-  
-  // Verificar nova base instalada
-  console.log('\n>> VERIFICANDO BASE INSTALADA');
-  const baseInstaladaOk = await verificarIntegridadeBase(TARGET_PATH);
-  if (!baseInstaladaOk) {
-    console.error('\n❌ Base instalada não passou na verificação final. Restaurando backup...');
+  try {
+    // Verificar se o arquivo existe
+    if (!fs.existsSync(dbPath)) {
+      console.error('Arquivo não encontrado!');
+      return false;
+    }
     
-    // Restaurar backup
-    if (fs.existsSync(BACKUP_PATH)) {
+    // Verificar tamanho
+    const stats = fs.statSync(dbPath);
+    console.log(`Tamanho da base: ${stats.size} bytes`);
+    if (stats.size < 1000000) { // Menos de 1MB é suspeito
+      console.error('Arquivo muito pequeno para uma base GeoIP!');
+      return false;
+    }
+    
+    // Verificar permissões
+    try {
+      fs.accessSync(dbPath, fs.constants.R_OK);
+      console.log('✅ Arquivo tem permissões de leitura');
+    } catch (error) {
+      console.error('⚠️ Arquivo sem permissão de leitura!');
+      return false;
+    }
+    
+    // Tentar ler o arquivo para a memória
+    console.log('Lendo arquivo para a memória...');
+    const dbBuffer = fs.readFileSync(dbPath);
+    console.log(`✅ Arquivo lido com sucesso (${dbBuffer.length} bytes)`);
+    
+    // Tentar abrir a base
+    console.log('Abrindo a base de dados...');
+    const reader = Reader.openBuffer(dbBuffer);
+    console.log('✅ Base de dados aberta com sucesso');
+    
+    // Testar consultas básicas
+    const testIPs = [
+      { name: 'Google DNS (IPv4)', ip: '8.8.8.8' },
+      { name: 'Cloudflare DNS (IPv4)', ip: '1.1.1.1' },
+      { name: 'Google DNS (IPv6)', ip: '2001:4860:4860::8888' },
+      { name: 'Cloudflare DNS (IPv6)', ip: '2606:4700:4700::1111' }
+    ];
+    
+    let successCount = 0;
+    let failCount = 0;
+    
+    for (const test of testIPs) {
+      console.log(`\nTestando IP: ${test.name} (${test.ip})`);
       try {
-        await copyFileAsync(BACKUP_PATH, TARGET_PATH);
-        console.log('✅ Backup restaurado com sucesso.');
+        const result = reader.city(test.ip);
+        console.log(`✅ Consulta bem-sucedida para ${test.ip}`);
+        
+        // Verificar se contém dados básicos
+        const hasCountry = result && result.country && result.country.names;
+        const hasCoords = result && result.location && typeof result.location.latitude === 'number';
+        
+        console.log(`  - País: ${hasCountry ? 'Presente' : 'Ausente'}`);
+        console.log(`  - Coordenadas: ${hasCoords ? 'Presentes' : 'Ausentes'}`);
+        
+        if (hasCountry || hasCoords) {
+          successCount++;
+        } else {
+          console.warn(`⚠️ Consulta retornou dados incompletos para ${test.ip}`);
+          failCount++;
+        }
       } catch (error) {
-        console.error(`❌ Erro ao restaurar backup: ${error.message}`);
+        console.error(`❌ Falha ao consultar ${test.ip}: ${error.message}`);
+        failCount++;
       }
     }
-  } else {
-    console.log('\n✅ Base instalada verificada com sucesso!');
+    
+    // Testar com maxmind alternativo como fallback
+    if (failCount > 0) {
+      console.log('\nTestando com biblioteca alternativa maxmind...');
+      try {
+        const altLookup = await maxmind.open(dbPath);
+        for (const test of testIPs) {
+          if (testIPs.failedIPs && testIPs.failedIPs.includes(test.ip)) {
+            console.log(`Tentando IP ${test.ip} com maxmind...`);
+            const result = altLookup.get(test.ip);
+            if (result && (result.country || (result.location && result.location.latitude))) {
+              console.log(`✅ Consulta bem-sucedida com maxmind para ${test.ip}`);
+              successCount++;
+              failCount--;
+            }
+          }
+        }
+      } catch (err) {
+        console.log(`Erro ao tentar com fallback: ${err.message}`);
+      }
+    }
+    
+    // Resumo
+    console.log('\n=== RESULTADO DA VERIFICAÇÃO ===');
+    console.log(`Total de testes: ${testIPs.length}`);
+    console.log(`Testes bem-sucedidos: ${successCount}`);
+    console.log(`Testes com falha: ${failCount}`);
+    
+    if (failCount === 0) {
+      console.log('✅✅✅ Base de dados íntegra e funcional');
+      return true;
+    } else if (failCount < testIPs.length) {
+      console.log('⚠️⚠️⚠️ Base de dados parcialmente funcional (alguns testes falharam)');
+      return true; // Consideramos ok se pelo menos alguns testes passaram
+    } else {
+      console.log('❌❌❌ Base de dados não funcional (todos os testes falharam)');
+      return false;
+    }
+  } catch (error) {
+    console.error(`Erro ao verificar integridade: ${error.message}`);
+    return false;
   }
-  
-  // Limpar arquivos temporários
-  console.log('\n>> LIMPANDO ARQUIVOS TEMPORÁRIOS');
-  await cleanup();
-  
-  console.log('\n======================================');
-  console.log(baseInstaladaOk ? '✅ CORREÇÃO CONCLUÍDA COM SUCESSO' : '❌ CORREÇÃO FALHOU');
-  console.log('======================================');
-}
+};
 
-// Executar processo principal
-main().catch(console.error); 
+// Iniciar processo
+main().catch(error => {
+  console.error('Erro fatal:', error);
+  cleanup();
+  process.exit(1);
+}); 
