@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const maxmind = require('maxmind');
+const { Reader } = require('@maxmind/geoip2-node');
 const logger = require('../config/logger');
 
 // Armazenar a instância do reader do MaxMind
@@ -128,24 +128,36 @@ const initialize = async () => {
     const stats = fs.statSync(dbPath);
     logger.info(`Tamanho do arquivo: ${stats.size} bytes`);
 
+    // Ler o arquivo para a memória (melhor performance)
+    const dbBuffer = fs.readFileSync(dbPath);
+    
     // Fechar reader anterior se existir
     if (reader) {
       try {
-        reader.close();
+        // Se o reader for da mesma biblioteca pode não ter método close
+        if (typeof reader.close === 'function') {
+          reader.close();
+        }
         logger.info('Reader anterior fechado com sucesso');
       } catch (error) {
         logger.warn('Erro ao fechar reader anterior:', error);
       }
     }
 
-    reader = await maxmind.open(dbPath);
+    // Abrir o buffer diretamente - melhor performance
+    reader = Reader.openBuffer(dbBuffer);
     logger.info('Base de dados GeoIP aberta com sucesso');
 
     // Testar com um IP conhecido
-    const testResult = reader.get('8.8.8.8');
-    if (testResult) {
-      logger.info('Base de dados GeoIP inicializada e testada com sucesso');
-      return true;
+    try {
+      const testResult = reader.city('8.8.8.8');
+      if (testResult) {
+        logger.info('Base de dados GeoIP inicializada e testada com sucesso');
+        return true;
+      }
+    } catch (error) {
+      logger.error('Falha ao testar base de dados GeoIP:', error);
+      return false;
     }
     
     logger.error('Falha ao testar base de dados GeoIP');
@@ -157,6 +169,20 @@ const initialize = async () => {
 };
 
 /**
+ * Retorna objeto vazio para localização
+ * @returns {Object} Template vazio para dados de localização
+ */
+const getEmptyLocation = () => ({
+  country: '',
+  city: '',
+  subdivision: '',
+  postal: '',
+  latitude: null,
+  longitude: null,
+  timezone: ''
+});
+
+/**
  * Obter localização de um IP
  * @param {string} ip - Endereço IP para geolocalizar
  * @returns {Object|null} Dados de localização
@@ -165,12 +191,12 @@ const getLocation = async (ip) => {
   try {
     if (!reader) {
       logger.warn('Serviço GeoIP não inicializado');
-      return null;
+      return getEmptyLocation();
     }
 
     if (!isValidIp(ip)) {
       logger.warn(`IP inválido: ${ip}`);
-      return null;
+      return getEmptyLocation();
     }
 
     // Verificar cache
@@ -180,100 +206,50 @@ const getLocation = async (ip) => {
       return cachedResult.data;
     }
 
-    // Estrutura básica de retorno (valores padrão)
-    const locationData = {
-      country: '',
-      city: '',
-      subdivision: '',
-      postal: '',
-      latitude: null,
-      longitude: null,
-      timezone: ''
-    };
-
-    // Tentar obter dados do IP com tratamento de erro
-    let result;
     try {
-      result = reader.get(ip);
-      if (!result) {
-        logger.warn(`Nenhum dado encontrado para IP: ${ip}`);
-        return locationData;
-      }
-    } catch (lookupError) {
-      logger.warn(`Erro ao consultar IP ${ip} na base GeoIP: ${lookupError.message}`);
-      // Armazenar no cache o resultado vazio para evitar novas tentativas no mesmo IP
+      // Usar a API direta do Reader do GeoIP2-node
+      const result = reader.city(ip);
+      
+      // Extrair dados com validação
+      const locationData = {
+        country: result.country && result.country.names && result.country.names.en || '',
+        city: result.city && result.city.names && result.city.names.en || '',
+        subdivision: result.subdivisions && result.subdivisions[0] && 
+                   result.subdivisions[0].names && result.subdivisions[0].names.en || '',
+        postal: result.postal && result.postal.code || '',
+        latitude: (result.location && result.location.latitude && 
+                  !isNaN(result.location.latitude)) ? result.location.latitude : null,
+        longitude: (result.location && result.location.longitude && 
+                   !isNaN(result.location.longitude)) ? result.location.longitude : null,
+        timezone: result.location && result.location.time_zone || ''
+      };
+
+      // Armazenar no cache
       cache.set(ip, {
         data: locationData,
         timestamp: Date.now()
       });
+
       return locationData;
-    }
-
-    // Extrair dados com tratamento seguro individual para cada campo
-    try {
-      locationData.country = result.country && result.country.names && result.country.names.en || '';
     } catch (error) {
-      logger.warn(`Erro ao extrair país para IP ${ip}:`, error);
+      // Tratamento específico de erros do GeoIP2-node
+      if (error.code === 'IP_ADDRESS_NOT_FOUND') {
+        logger.warn(`IP não encontrado na base GeoIP: ${ip}`);
+      } else if (error.code === 'IP_ADDRESS_RESERVED') {
+        logger.warn(`IP reservado, ignorando geolocalização: ${ip}`);
+      } else if (error.message && error.message.includes('Unknown type NaN at offset')) {
+        logger.warn(`Erro ao consultar IP ${ip} na base GeoIP: ${error.message}`);
+      } else {
+        logger.error(`Erro ao buscar localização para IP ${ip}:`, error);
+      }
+      
+      // Retornar objeto vazio em vez de null
+      return getEmptyLocation();
     }
-
-    try {
-      locationData.city = result.city && result.city.names && result.city.names.en || '';
-    } catch (error) {
-      logger.warn(`Erro ao extrair cidade para IP ${ip}:`, error);
-    }
-
-    try {
-      locationData.subdivision = result.subdivisions && result.subdivisions[0] && 
-                                result.subdivisions[0].names && result.subdivisions[0].names.en || '';
-    } catch (error) {
-      logger.warn(`Erro ao extrair subdivisão para IP ${ip}:`, error);
-    }
-
-    try {
-      locationData.postal = result.postal && result.postal.code || '';
-    } catch (error) {
-      logger.warn(`Erro ao extrair código postal para IP ${ip}:`, error);
-    }
-
-    try {
-      const latitude = result.location && result.location.latitude;
-      locationData.latitude = (typeof latitude === 'number' && !isNaN(latitude)) ? latitude : null;
-    } catch (error) {
-      logger.warn(`Erro ao extrair latitude para IP ${ip}:`, error);
-    }
-
-    try {
-      const longitude = result.location && result.location.longitude;
-      locationData.longitude = (typeof longitude === 'number' && !isNaN(longitude)) ? longitude : null;
-    } catch (error) {
-      logger.warn(`Erro ao extrair longitude para IP ${ip}:`, error);
-    }
-
-    try {
-      locationData.timezone = result.location && result.location.time_zone || '';
-    } catch (error) {
-      logger.warn(`Erro ao extrair timezone para IP ${ip}:`, error);
-    }
-
-    // Armazenar no cache
-    cache.set(ip, {
-      data: locationData,
-      timestamp: Date.now()
-    });
-
-    return locationData;
   } catch (error) {
     logger.error(`Erro ao buscar localização para IP ${ip}:`, error);
     // Retornar objeto vazio em vez de null para não interromper o fluxo
-    return {
-      country: '',
-      city: '',
-      subdivision: '',
-      postal: '',
-      latitude: null,
-      longitude: null,
-      timezone: ''
-    };
+    return getEmptyLocation();
   }
 };
 

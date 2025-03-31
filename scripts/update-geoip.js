@@ -10,11 +10,14 @@
 
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
-const zlib = require('zlib');
+const { execSync } = require('child_process');
+const { promisify } = require('util');
+const axios = require('axios');
+const extract = require('extract-zip');
 const tar = require('tar');
 const dotenv = require('dotenv');
 const logger = require('../src/config/logger');
+const { Reader } = require('@maxmind/geoip2-node');
 
 // Carregar variáveis de ambiente
 dotenv.config({ path: path.join(__dirname, '../.env') });
@@ -24,6 +27,10 @@ const MAXMIND_LICENSE_KEY = process.env.MAXMIND_LICENSE_KEY;
 const TARGET_DIR = path.join(__dirname, '../data');
 const DATABASE_FILENAME = 'GeoLite2-City.mmdb';
 const TARGET_PATH = path.join(TARGET_DIR, DATABASE_FILENAME);
+
+const writeFileAsync = promisify(fs.writeFile);
+const unlinkAsync = promisify(fs.unlink);
+const mkdirAsync = promisify(fs.mkdir);
 
 // Verificar credenciais
 if (!MAXMIND_ACCOUNT_ID || !MAXMIND_LICENSE_KEY) {
@@ -37,138 +44,168 @@ if (!fs.existsSync(TARGET_DIR)) {
   console.log(`Diretório criado: ${TARGET_DIR}`);
 }
 
-// URL para download
-const downloadUrl = `https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=${MAXMIND_LICENSE_KEY}&suffix=tar.gz`;
+const LICENSE_KEY = MAXMIND_LICENSE_KEY;
+const EDITION_ID = 'GeoLite2-City';
+const TEMP_TAR_FILE = path.resolve(TARGET_DIR, 'geolite2-city.tar.gz');
 
-console.log('Iniciando download da base de dados GeoIP...');
-
-// Função para seguir redirecionamentos
-const followRedirects = (url, redirectCount = 0) => {
-  return new Promise((resolve, reject) => {
-    if (redirectCount > 5) {
-      reject(new Error('Número máximo de redirecionamentos excedido'));
-      return;
-    }
-
-    // Determinar o protocolo baseado na URL
-    const httpModule = url.startsWith('https:') ? require('https') : require('http');
-    
-    console.log(`Tentando download de: ${url}`);
-    
-    httpModule.get(url, (response) => {
-      // Se for um redirecionamento (3xx)
-      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        const redirectUrl = new URL(response.headers.location, url).toString();
-        console.log(`Redirecionado para: ${redirectUrl}`);
-        followRedirects(redirectUrl, redirectCount + 1).then(resolve).catch(reject);
-      } else if (response.statusCode !== 200) {
-        reject(new Error(`Falha no download, status: ${response.statusCode}`));
-      } else {
-        resolve(response);
-      }
-    }).on('error', reject);
-  });
-};
-
-// Fazer o download do arquivo
-const downloadFile = () => {
-  return new Promise((resolve, reject) => {
-    const tempFile = path.join(TARGET_DIR, 'temp-geoip.tar.gz');
-    const fileStream = fs.createWriteStream(tempFile);
-
-    followRedirects(downloadUrl)
-      .then((response) => {
-        response.pipe(fileStream);
-
-        fileStream.on('finish', () => {
-          fileStream.close();
-          console.log(`Download concluído: ${tempFile}`);
-          resolve(tempFile);
-        });
-
-        fileStream.on('error', (err) => {
-          fs.unlink(tempFile, () => {});
-          reject(err);
-        });
-      })
-      .catch((err) => {
-        fs.unlink(tempFile, () => {});
-        reject(err);
-      });
-  });
-};
-
-// Extrair o arquivo baixado
-const extractFile = (filePath) => {
-  return new Promise((resolve, reject) => {
-    console.log('Extraindo arquivo...');
-    
-    fs.createReadStream(filePath)
-      .pipe(zlib.createGunzip())
-      .pipe(tar.extract({
-        cwd: TARGET_DIR,
-        strict: true
-      }))
-      .on('error', reject)
-      .on('end', () => {
-        console.log('Extração concluída');
-        resolve();
-      });
-  });
-};
-
-// Mover o arquivo para o local correto
-const moveFile = () => {
-  return new Promise((resolve, reject) => {
-    // Encontrar o diretório extraído
-    const files = fs.readdirSync(TARGET_DIR);
-    const extractedDir = files.find(file => file.startsWith('GeoLite2-City_'));
-    
-    if (!extractedDir) {
-      reject(new Error('Diretório extraído não encontrado'));
-      return;
-    }
-    
-    const extractedPath = path.join(TARGET_DIR, extractedDir, DATABASE_FILENAME);
-    
-    if (!fs.existsSync(extractedPath)) {
-      reject(new Error(`Arquivo ${DATABASE_FILENAME} não encontrado no diretório extraído`));
-      return;
-    }
-    
-    // Se o arquivo de destino já existir, fazer backup
-    if (fs.existsSync(TARGET_PATH)) {
-      const backupPath = `${TARGET_PATH}.bak`;
-      fs.renameSync(TARGET_PATH, backupPath);
-      console.log(`Backup do arquivo anterior criado: ${backupPath}`);
-    }
-    
-    // Mover o arquivo
-    fs.copyFileSync(extractedPath, TARGET_PATH);
-    console.log(`Arquivo movido para ${TARGET_PATH}`);
-    
-    // Limpar arquivos temporários
-    fs.rmSync(path.join(TARGET_DIR, extractedDir), { recursive: true, force: true });
-    resolve();
-  });
-};
-
-// Executar o processo completo
-const run = async () => {
+async function downloadFile(url, outputPath) {
+  console.log('Iniciando download da base de dados GeoIP...');
+  console.log(`URL de download: ${url}`);
+  
   try {
-    const tempFile = await downloadFile();
-    await extractFile(tempFile);
-    await moveFile();
+    const response = await axios({
+      method: 'GET',
+      url: url,
+      responseType: 'arraybuffer',
+      maxRedirects: 5
+    });
     
-    // Remover o arquivo temporário
-    fs.unlinkSync(tempFile);
-    console.log('Arquivo temporário removido');
-    
-    console.log(`Base de dados GeoIP atualizada com sucesso: ${TARGET_PATH}`);
+    await writeFileAsync(outputPath, Buffer.from(response.data));
+    console.log(`Download concluído: ${outputPath}`);
+    return true;
   } catch (error) {
-    console.error('Erro ao atualizar base de dados GeoIP:', error);
-    process.exit(1);
+    console.error(`Erro no download: ${error.message}`);
+    if (error.response) {
+      console.error(`Status: ${error.response.status}`);
+    }
+    return false;
   }
-};
+}
 
-run(); 
+async function extractTarGz(tarFilePath, outputDir) {
+  console.log(`Extraindo arquivo ${tarFilePath} para ${outputDir}...`);
+  
+  try {
+    await tar.extract({
+      file: tarFilePath,
+      cwd: outputDir
+    });
+    console.log('Extração concluída com sucesso!');
+    return true;
+  } catch (error) {
+    console.error(`Erro na extração: ${error.message}`);
+    return false;
+  }
+}
+
+async function findMmdbFile(directory) {
+  console.log(`Buscando arquivo .mmdb em ${directory}...`);
+  
+  try {
+    const items = fs.readdirSync(directory, { recursive: true });
+    for (const item of items) {
+      const itemPath = path.join(directory, item);
+      if (fs.statSync(itemPath).isDirectory()) {
+        const result = await findMmdbFile(itemPath);
+        if (result) return result;
+      } else if (item.endsWith('.mmdb')) {
+        console.log(`Arquivo .mmdb encontrado: ${itemPath}`);
+        return itemPath;
+      }
+    }
+  } catch (error) {
+    console.error(`Erro ao buscar arquivo .mmdb: ${error.message}`);
+  }
+  
+  return null;
+}
+
+async function testDatabase(dbPath) {
+  console.log(`Testando banco de dados em ${dbPath}...`);
+  
+  try {
+    const buffer = fs.readFileSync(dbPath);
+    const reader = Reader.openBuffer(buffer);
+    
+    // Teste com um IP conhecido (Google DNS)
+    const testIp = '8.8.8.8';
+    const result = reader.city(testIp);
+    
+    console.log(`Teste bem-sucedido com IP ${testIp}:`);
+    console.log(`- País: ${result.country && result.country.names && (result.country.names.pt || result.country.names.en) || 'Desconhecido'}`);
+    console.log(`- Cidade: ${result.city && result.city.names && (result.city.names.pt || result.city.names.en) || 'Desconhecido'}`);
+    
+    return true;
+  } catch (error) {
+    console.error(`Erro ao testar banco de dados: ${error.message}`);
+    return false;
+  }
+}
+
+async function main() {
+  // Criar diretório de destino, se não existir
+  try {
+    if (!fs.existsSync(TARGET_DIR)) {
+      await mkdirAsync(TARGET_DIR, { recursive: true });
+      console.log(`Diretório criado: ${TARGET_DIR}`);
+    }
+  } catch (error) {
+    console.error(`Erro ao criar diretório: ${error.message}`);
+    return;
+  }
+  
+  // Montar URL de download
+  const downloadUrl = `https://download.maxmind.com/app/geoip_download?edition_id=${EDITION_ID}&license_key=${LICENSE_KEY}&suffix=tar.gz`;
+  
+  // Efetuar download
+  const downloadSuccess = await downloadFile(downloadUrl, TEMP_TAR_FILE);
+  if (!downloadSuccess) {
+    console.error('Falha no download. Abortando atualização.');
+    return;
+  }
+  
+  // Extrair arquivo
+  const extractSuccess = await extractTarGz(TEMP_TAR_FILE, TARGET_DIR);
+  if (!extractSuccess) {
+    console.error('Falha na extração. Abortando atualização.');
+    // Limpar arquivo de download
+    try {
+      await unlinkAsync(TEMP_TAR_FILE);
+      console.log(`Arquivo temporário removido: ${TEMP_TAR_FILE}`);
+    } catch (error) {
+      console.error(`Erro ao remover arquivo temporário: ${error.message}`);
+    }
+    return;
+  }
+  
+  // Encontrar arquivo .mmdb extraído
+  const mmdbFile = await findMmdbFile(TARGET_DIR);
+  if (!mmdbFile) {
+    console.error('Arquivo .mmdb não encontrado após extração. Abortando atualização.');
+    return;
+  }
+  
+  // Mover arquivo para o destino final
+  try {
+    fs.copyFileSync(mmdbFile, TARGET_PATH);
+    console.log(`Base de dados atualizada com sucesso: ${TARGET_PATH}`);
+    
+    // Testar a base de dados atualizada
+    const testSuccess = await testDatabase(TARGET_PATH);
+    if (testSuccess) {
+      console.log('A base de dados foi atualizada e validada com sucesso!');
+    } else {
+      console.warn('AVISO: A base de dados foi atualizada, mas o teste falhou. Verifique a integridade do arquivo.');
+    }
+  } catch (error) {
+    console.error(`Erro ao copiar arquivo para destino final: ${error.message}`);
+  }
+  
+  // Limpar arquivos temporários
+  try {
+    await unlinkAsync(TEMP_TAR_FILE);
+    console.log(`Arquivo temporário removido: ${TEMP_TAR_FILE}`);
+    
+    // Remover outros arquivos extraídos
+    const extractedDir = path.join(TARGET_DIR, 'GeoLite2-City_*');
+    execSync(`rm -rf ${extractedDir}`);
+    console.log('Arquivos temporários removidos com sucesso!');
+  } catch (error) {
+    console.error(`Erro ao limpar arquivos temporários: ${error.message}`);
+  }
+}
+
+main().catch(error => {
+  console.error(`Erro não tratado: ${error.message}`);
+  process.exit(1);
+}); 
