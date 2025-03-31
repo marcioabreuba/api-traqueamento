@@ -162,3 +162,31 @@ set DEBUG_GEOIP=true
 # No Render (variável de ambiente)
 DEBUG_GEOIP=true
 ```
+
+## Variáveis de Ambiente
+
+O projeto utiliza variáveis de ambiente para configuração. Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis:
+
+```
+# Banco de dados
+DATABASE_URL=postgresql://user:password@localhost:5432/database
+
+# Ambiente
+NODE_ENV=development
+PORT=3000
+
+# GeoIP
+MAXMIND_LICENSE_KEY=sua_chave_aqui
+DEBUG_GEOIP=false
+```
+
+### Variável MAXMIND_LICENSE_KEY
+
+Para funcionar corretamente, o serviço de GeoIP precisa de uma chave de licença válida do MaxMind para download da base de dados. Para obter uma chave gratuita:
+
+1. Crie uma conta em [MaxMind](https://www.maxmind.com/en/geolite2/signup)
+2. Acesse "My License Key" no menu da conta
+3. Gere uma nova chave de licença
+4. Adicione à variável `MAXMIND_LICENSE_KEY` no arquivo `.env` ou no ambiente Render
+
+Para mais detalhes sobre a configuração no ambiente Render, consulte [docs/rendering-setup.md](docs/rendering-setup.md).

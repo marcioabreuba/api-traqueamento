@@ -29,7 +29,8 @@ const isAutomatedMode = process.argv.includes('--auto') ||
                          isRenderEnvironment;
 
 // Configurações
-const DOWNLOAD_URL = 'https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=JOJ3REIKfJWLIAqf&suffix=tar.gz';
+const MAXMIND_LICENSE_KEY = process.env.MAXMIND_LICENSE_KEY || 'JOJ3REIKfJWLIAqf';
+const DOWNLOAD_URL = `https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=${MAXMIND_LICENSE_KEY}&suffix=tar.gz`;
 const DATA_DIR = path.join(process.cwd(), 'data');
 const GEOIP_DB_PATH = path.join(DATA_DIR, 'GeoLite2-City.mmdb');
 const DOWNLOAD_PATH = path.join(DATA_DIR, 'geolite2-city.tar.gz');
