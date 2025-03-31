@@ -112,3 +112,6 @@ Thumbs.db
 # Build
 dist/
 build/
+
+# Npm lockfile
+package-lock.json
