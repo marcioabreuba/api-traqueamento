@@ -91,6 +91,10 @@ const initialize = async () => {
   try {
     logger.info('Iniciando inicialização do serviço GeoIP');
     
+    // Limpar o cache ao inicializar
+    cache.clear();
+    logger.info('Cache limpo');
+    
     const possiblePaths = [
       path.join(process.cwd(), 'data', 'GeoLite2-City.mmdb'),
       path.join(__dirname, '../../data/GeoLite2-City.mmdb'),
@@ -153,6 +157,21 @@ const initialize = async () => {
       const testResult = reader.city('8.8.8.8');
       if (testResult) {
         logger.info('Base de dados GeoIP inicializada e testada com sucesso');
+        
+        // Testar com seu próprio IP para diagnóstico
+        try {
+          const yourIpResult = reader.city('2804:1054:3016:61b0:8070:e8a8:6f99:3663');
+          logger.info(`Teste com seu IP - Dados disponíveis: ${JSON.stringify({
+            country: yourIpResult.country && yourIpResult.country.names && yourIpResult.country.names.en || 'N/A',
+            city: yourIpResult.city && yourIpResult.city.names && yourIpResult.city.names.en || 'N/A',
+            subdivision: yourIpResult.subdivisions && yourIpResult.subdivisions[0] && 
+                       yourIpResult.subdivisions[0].names && yourIpResult.subdivisions[0].names.en || 'N/A',
+            postal: yourIpResult.postal && yourIpResult.postal.code || 'N/A'
+          })}`);
+        } catch (yourIpError) {
+          logger.error(`Erro ao testar com seu IP: ${yourIpError.message}`);
+        }
+        
         return true;
       }
     } catch (error) {
@@ -224,9 +243,13 @@ const getLocation = async (ip) => {
                   !isNaN(result.location.latitude)) ? result.location.latitude : null,
         longitude: (result.location && result.location.longitude && 
                    !isNaN(result.location.longitude)) ? result.location.longitude : null,
-        timezone: result.location && result.location.timeZone || ''
+        timezone: result.location && result.location.timeZone || '',
+        accuracyRadius: result.location && result.location.accuracyRadius || null
       };
 
+      // Log dos dados extraídos
+      logger.debug(`Dados extraídos para IP ${ip}: ${JSON.stringify(locationData)}`);
+      
       // Armazenar no cache
       cache.set(ip, {
         data: locationData,

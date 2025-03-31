@@ -8,7 +8,7 @@ async function testGeoIP() {
   await geoipService.initialize();
   
   const testIPs = [
-    '72.14.201.238', // SEU IP
+    '2804:1054:3016:61b0:8070:e8a8:6f99:3663', // SEU IP (IPv6)
     '8.8.8.8',        // Google DNS (EUA)
     '1.1.1.1',        // Cloudflare DNS (Austrália)
     '200.160.2.3',    // Brasil
@@ -18,7 +18,7 @@ async function testGeoIP() {
   ];
   
   for (const ip of testIPs) {
-    const isSeuIP = ip === '72.14.201.238';
+    const isSeuIP = ip === '2804:1054:3016:61b0:8070:e8a8:6f99:3663';
     console.log(`\nConsultando IP: ${ip}${isSeuIP ? ' (SEU IP)' : ''}`);
     try {
       const result = await geoipService.getLocation(ip);
