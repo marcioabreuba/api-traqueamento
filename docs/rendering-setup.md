@@ -25,13 +25,13 @@ Para garantir que a geolocalização funcione corretamente, é necessário confi
 
 ## Problemas Comuns
 
-### Erro 401 no Download da Base GeoIP
+### Erro 401 ou 302 no Download da Base GeoIP
 
 ```
 Erro fatal: Error: Falha no download. Status code: 401
 ```
 
-Este erro indica que a chave de licença para download da base GeoIP é inválida ou não foi configurada. Verifique:
+Este erro indica problemas com a chave de licença ou com o redirecionamento da URL de download. Verifique:
 
 1. Se a variável `MAXMIND_LICENSE_KEY` está configurada no Render
 2. Se a chave de licença é válida e tem permissão para baixar a base GeoLite2-City
@@ -39,7 +39,7 @@ Este erro indica que a chave de licença para download da base GeoIP é inválid
 
 ### Correção Manual da Base GeoIP
 
-Se necessário, é possível atualizar a base GeoIP manualmente usando o shell do Render:
+Para atualizar a base GeoIP manualmente usando o shell do Render:
 
 1. Acesse o shell do serviço no Render
 2. Execute o seguinte comando:
@@ -50,16 +50,15 @@ bash /opt/render/project/src/scripts/download-geoip.sh
 
 ## Inicialização do Serviço
 
-O serviço está configurado para tentar atualizar a base GeoIP durante a inicialização, usando o comando:
+O serviço agora inicia diretamente, sem tentar atualizar a base GeoIP automaticamente:
 
 ```
-node scripts/fix-geoip.js && node src/index.js || node src/index.js
+node src/index.js
 ```
 
-Esta configuração garante que:
-1. O serviço tentará atualizar a base GeoIP primeiro
-2. Mesmo que a atualização falhe, o serviço será iniciado normalmente
-3. O sistema de fallback para IPs brasileiros garantirá o funcionamento do serviço mesmo com problemas na base
+A atualização da base deve ser feita manualmente quando necessário, usando o script download-geoip.sh.
+
+O sistema de fallback para IPs brasileiros garantirá o funcionamento do serviço mesmo com problemas na base GeoIP.
 
 ## Monitoramento
 

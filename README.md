@@ -92,53 +92,27 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 
 ## Funcionalidades do GeoIP
 
-### Correção Automática da Base GeoIP
+### Atualizando a Base GeoIP
 
-O serviço agora inclui um mecanismo automático de correção e atualização da base de dados GeoIP. Quando o servidor é iniciado com `yarn start` ou `npm start`, o script de correção da base GeoIP é executado automaticamente antes da inicialização do serviço.
+A base de dados GeoIP precisa ser atualizada manualmente quando necessário.
 
-### Como Funciona
+#### Local/Desenvolvimento
 
-1. **Durante a inicialização do serviço:**
-   - O script `fix-geoip.js` é executado automaticamente
-   - Verifica se a base de dados GeoIP existe e está íntegra
-   - Baixa uma nova base se necessário
-   - Valida a nova base antes de substituir a atual
-   - Inicia o serviço com a base atualizada
+Execute o script de atualização:
 
-2. **No ambiente Render:**
-   - O processo é totalmente automatizado
-   - Detecção automática do ambiente Render e execução em modo não-interativo
-   - Sem necessidade de intervenção manual
+```bash
+npm run fix-geoip
+# ou
+yarn fix-geoip
+```
 
-### Comandos Disponíveis
+#### Ambiente Render (Produção)
 
-- **Iniciar serviço com correção automática da base GeoIP:**
-  ```bash
-  npm start
-  # ou
-  yarn start
-  ```
+No shell do Render, execute:
 
-- **Executar apenas a correção da base GeoIP:**
-  ```bash
-  npm run fix-geoip
-  # ou
-  yarn fix-geoip
-  ```
-
-- **Executar a correção em modo não-interativo:**
-  ```bash
-  npm run fix-geoip -- --auto
-  # ou
-  yarn fix-geoip --auto
-  ```
-
-- **Testar a base GeoIP atual:**
-  ```bash
-  npm run test-geoip
-  # ou
-  yarn test-geoip
-  ```
+```bash
+bash /opt/render/project/src/scripts/download-geoip.sh
+```
 
 ### Sistema de Fallback para IPs Brasileiros
 
@@ -162,6 +136,8 @@ set DEBUG_GEOIP=true
 # No Render (variável de ambiente)
 DEBUG_GEOIP=true
 ```
+
+Para mais detalhes sobre a configuração no ambiente Render, consulte [docs/rendering-setup.md](docs/rendering-setup.md).
 
 ## Variáveis de Ambiente
 
