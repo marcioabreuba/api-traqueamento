@@ -36,7 +36,7 @@ function processFile(filePath) {
       try {
         text = strategy(content);
         break;
-      } catch {
+      } catch (error) {
         continue;
       }
     }
