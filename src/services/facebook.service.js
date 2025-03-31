@@ -71,6 +71,37 @@ const formatEventData = (data) => {
 
   const { eventName, eventTime, userData = {}, customData = {}, eventSourceUrl, eventId = uuidv4() } = data;
 
+  // Validar e normalizar o event_time
+  let normalizedEventTime = eventTime;
+  
+  // Converter para número se for string
+  if (typeof normalizedEventTime === 'string') {
+    normalizedEventTime = parseInt(normalizedEventTime, 10);
+    logger.debug(`Event time convertido de string para número: ${normalizedEventTime}`);
+  }
+  
+  // Verificar se é um timestamp em milissegundos (13 dígitos)
+  if (normalizedEventTime > 1000000000000) {
+    normalizedEventTime = Math.floor(normalizedEventTime / 1000);
+    logger.debug(`Event time convertido de milissegundos para segundos: ${normalizedEventTime}`);
+  }
+  
+  // Verificar se o timestamp está no futuro
+  const currentTimeInSeconds = Math.floor(Date.now() / 1000);
+  if (normalizedEventTime > currentTimeInSeconds) {
+    logger.warn(`Timestamp no futuro detectado (${normalizedEventTime}), ajustando para o timestamp atual`);
+    normalizedEventTime = currentTimeInSeconds;
+  }
+  
+  // Verificar se o timestamp é muito antigo (mais de 7 dias)
+  const sevenDaysAgo = currentTimeInSeconds - (7 * 24 * 60 * 60);
+  if (normalizedEventTime < sevenDaysAgo) {
+    logger.warn(`Timestamp muito antigo (${normalizedEventTime}), ajustando para o limite de 7 dias atrás`);
+    normalizedEventTime = sevenDaysAgo;
+  }
+  
+  logger.info(`Event time após normalização: ${normalizedEventTime} (${new Date(normalizedEventTime * 1000).toISOString()})`);
+
   // Processar userData conforme especificação oficial do Facebook
   // https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/customer-information-parameters
   const formattedUserData = {
@@ -146,7 +177,7 @@ const formatEventData = (data) => {
   // https://developers.facebook.com/docs/marketing-api/conversions-api/parameters
   const event = {
     event_name: eventName,
-    event_time: eventTime,
+    event_time: normalizedEventTime,
     user_data: formattedUserData,
     custom_data: cleanedCustomData,
     event_id: eventId,
@@ -263,6 +294,38 @@ const sendEvent = async (pixelId, accessToken, eventData, testCode) => {
         pixelId, // Adicionar pixelId para formatação correta
         eventTime: eventDataCopy.eventTime || Math.floor(Date.now() / 1000)
       };
+      
+      // Garantir que o timestamp está sempre no formato correto (Unix em segundos)
+      if (finalEventData.eventTime) {
+        // Converter para número se for string
+        let timestamp = typeof finalEventData.eventTime === 'string' 
+          ? parseInt(finalEventData.eventTime, 10) 
+          : finalEventData.eventTime;
+        
+        // Verificar se é um timestamp em milissegundos (13 dígitos)
+        if (timestamp > 1000000000000) {
+          // Converter de milissegundos para segundos
+          timestamp = Math.floor(timestamp / 1000);
+          logger.info(`Facebook API: Timestamp convertido de milissegundos para segundos: ${timestamp}`);
+        }
+        
+        // Verificar se o timestamp está no futuro
+        const currentTimeInSeconds = Math.floor(Date.now() / 1000);
+        if (timestamp > currentTimeInSeconds) {
+          logger.warn(`Facebook API: Timestamp no futuro detectado (${timestamp}), ajustando para o timestamp atual`);
+          timestamp = currentTimeInSeconds;
+        }
+        
+        // Verificar se o timestamp é muito antigo (mais de 7 dias)
+        const sevenDaysAgo = currentTimeInSeconds - (7 * 24 * 60 * 60);
+        if (timestamp < sevenDaysAgo) {
+          logger.warn(`Facebook API: Timestamp muito antigo (${timestamp}), ajustando para o limite de 7 dias atrás`);
+          timestamp = sevenDaysAgo;
+        }
+        
+        finalEventData.eventTime = timestamp;
+        logger.info(`Facebook API: Timestamp final após validação: ${finalEventData.eventTime}`);
+      }
 
       logger.info(`Iniciando envio de evento para pixel ${pixelId}`);
 

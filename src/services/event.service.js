@@ -389,7 +389,35 @@ const processEventWithGeoData = async (eventData, domainOrPixelId) => {
 
     // Extrair campos principais com fallback para valores padrão
     const eventName = eventData.event_name;
-    const eventTime = eventData.event_time || Math.floor(Date.now() / 1000);
+    
+    // Garantir que o eventTime seja um timestamp Unix válido em segundos
+    let eventTime = null;
+    if (eventData.event_time) {
+      // Converter para número se for string
+      let timestamp = typeof eventData.event_time === 'string' 
+        ? parseInt(eventData.event_time, 10) 
+        : eventData.event_time;
+      
+      // Verificar se é um timestamp em milissegundos (13 dígitos)
+      if (timestamp > 1000000000000) {
+        // Converter de milissegundos para segundos
+        timestamp = Math.floor(timestamp / 1000);
+        logger.info(`Timestamp convertido de milissegundos para segundos: ${timestamp}`);
+      }
+      
+      // Verificar se o timestamp está no futuro
+      const currentTimeInSeconds = Math.floor(Date.now() / 1000);
+      if (timestamp > currentTimeInSeconds) {
+        logger.warn(`Timestamp no futuro detectado (${timestamp}), ajustando para o timestamp atual`);
+        timestamp = currentTimeInSeconds;
+      }
+      
+      eventTime = timestamp;
+    } else {
+      // Fallback para timestamp atual em segundos
+      eventTime = Math.floor(Date.now() / 1000);
+      logger.info(`Nenhum timestamp fornecido, usando timestamp atual: ${eventTime}`);
+    }
 
     // Preparar dados do evento com valores padrão onde necessário
     const eventToSave = {
