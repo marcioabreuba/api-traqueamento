@@ -158,18 +158,15 @@ const initialize = async () => {
       if (testResult) {
         logger.info('Base de dados GeoIP inicializada e testada com sucesso');
         
-        // Testar com seu próprio IP para diagnóstico
+        // Teste de diagnóstico (opcional) - não deve afetar o sucesso da inicialização
         try {
-          const yourIpResult = reader.city('2804:1054:3016:61b0:8070:e8a8:6f99:3663');
-          logger.info(`Teste com seu IP - Dados disponíveis: ${JSON.stringify({
-            country: yourIpResult.country && yourIpResult.country.names && yourIpResult.country.names.en || 'N/A',
-            city: yourIpResult.city && yourIpResult.city.names && yourIpResult.city.names.en || 'N/A',
-            subdivision: yourIpResult.subdivisions && yourIpResult.subdivisions[0] && 
-                       yourIpResult.subdivisions[0].names && yourIpResult.subdivisions[0].names.en || 'N/A',
-            postal: yourIpResult.postal && yourIpResult.postal.code || 'N/A'
-          })}`);
-        } catch (yourIpError) {
-          logger.error(`Erro ao testar com seu IP: ${yourIpError.message}`);
+          // Tentar testar com IPv6 específico (apenas para diagnóstico)
+          reader.city('2804:1054:3016:61b0:8070:e8a8:6f99:3663');
+          logger.info('Teste com IPv6 específico bem-sucedido');
+        } catch (ipv6Error) {
+          // Apenas logar o erro, mas não interferir na inicialização
+          logger.warn(`Erro no teste de diagnóstico com IPv6 específico: ${ipv6Error.message}`);
+          logger.warn('Este erro não afeta o funcionamento normal do serviço');
         }
         
         return true;
