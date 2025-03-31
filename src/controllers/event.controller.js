@@ -91,6 +91,7 @@ const createEvent = catchAsync(async (req, res) => {
     logger.error(`Status code final do erro: ${statusCode}`);
 
     logger.error(`É instância de ApiError? ${error instanceof ApiError}`);
+    logger.error(`Erro detalhado [${statusCode}]: ${errorMessage}`);
 
     // Tratamento específico para erros de validação
     if (errorMessage && (errorMessage.includes('validação') || errorMessage.includes('validation'))) {
@@ -104,15 +105,18 @@ const createEvent = catchAsync(async (req, res) => {
 
     // Tratamento de erros ApiError
     if (error instanceof ApiError) {
-      logger.error(`Erro detalhado [${statusCode}]: ${errorMessage}`);
-
       // Garantir que o status é um número válido para resposta HTTP
       try {
-        return res.status(statusCode).json({
+        // Validação final do status code antes de usar
+        const validStatusCode = Number.isInteger(statusCode) && statusCode >= 100 && statusCode < 600 
+          ? statusCode 
+          : 500;
+          
+        return res.status(validStatusCode).json({
           success: false,
           error: errorMessage,
           details: error.details || 'Erro interno',
-          code: statusCode
+          code: validStatusCode
         });
       } catch (resErr) {
         logger.error(`Erro ao enviar resposta com status ${statusCode}: ${resErr.message}`);
@@ -126,14 +130,17 @@ const createEvent = catchAsync(async (req, res) => {
     }
 
     // Fallback para erros não tratados
-    logger.error(`Erro detalhado [${statusCode}]: ${errorMessage}`);
-
     try {
-      return res.status(statusCode).json({
+      // Validação final do status code antes de usar
+      const validStatusCode = Number.isInteger(statusCode) && statusCode >= 100 && statusCode < 600 
+        ? statusCode 
+        : 500;
+        
+      return res.status(validStatusCode).json({
         success: false,
         error: 'Erro interno do servidor ao processar evento',
         details: errorMessage,
-        code: statusCode
+        code: validStatusCode
       });
     } catch (resErr) {
       logger.error(`Erro ao enviar resposta com status ${statusCode}: ${resErr.message}`);
