@@ -52,7 +52,7 @@ const eventValidation = {
         }),
 
         // Adicionando os campos que estavam causando erro
-        content_ids: Joi.array().items(Joi.string()).messages({
+        content_ids: Joi.array().items(Joi.string().allow('')).messages({
           'array.base': 'Os IDs de conteúdo devem ser um array'
         }),
 

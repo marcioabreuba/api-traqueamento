@@ -103,54 +103,13 @@ const createEvent = catchAsync(async (req, res) => {
       });
     }
 
-    // Tratamento de erros ApiError
-    if (error instanceof ApiError) {
-      // Garantir que o status é um número válido para resposta HTTP
-      try {
-        // Validação final do status code antes de usar
-        const validStatusCode = Number.isInteger(statusCode) && statusCode >= 100 && statusCode < 600 
-          ? statusCode 
-          : 500;
-          
-        return res.status(validStatusCode).json({
-          success: false,
-          error: errorMessage,
-          details: error.details || 'Erro interno',
-          code: validStatusCode
-        });
-      } catch (resErr) {
-        logger.error(`Erro ao enviar resposta com status ${statusCode}: ${resErr.message}`);
-        return res.status(500).json({
-          success: false,
-          error: errorMessage,
-          details: 'Erro ao processar status HTTP',
-          code: 500
-        });
-      }
-    }
-
-    // Fallback para erros não tratados
-    try {
-      // Validação final do status code antes de usar
-      const validStatusCode = Number.isInteger(statusCode) && statusCode >= 100 && statusCode < 600 
-        ? statusCode 
-        : 500;
-        
-      return res.status(validStatusCode).json({
-        success: false,
-        error: 'Erro interno do servidor ao processar evento',
-        details: errorMessage,
-        code: validStatusCode
-      });
-    } catch (resErr) {
-      logger.error(`Erro ao enviar resposta com status ${statusCode}: ${resErr.message}`);
-      return res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-        details: errorMessage,
-        code: 500
-      });
-    }
+    // Para outros erros, retornar com o status code apropriado
+    return res.status(statusCode).json({
+      success: false,
+      error: errorMessage,
+      details: error.details || 'Erro interno do servidor',
+      code: statusCode
+    });
   }
 });
 
